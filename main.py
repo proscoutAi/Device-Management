@@ -1,9 +1,8 @@
 from session import Session
-from pylon_camera import Pylon_Session
-#import RPi.GPIO as GPIO
 import uuid
 from gpiozero import LED,Button
 from time import sleep
+import time
 
 Blue = LED(17)
 Yellow=LED(18)
@@ -16,11 +15,10 @@ def main():
     session = Session()
     
     Yellow.toggle()
+   
     
     while True:
         
-        #choice = input('Choice: ')
-
         if Left.is_pressed:
             if not Blue.value:
                 
@@ -39,6 +37,7 @@ def main():
                 sleep(0.2)
 
                 session.end()
+    
 
 if __name__ == '__main__':
     main()

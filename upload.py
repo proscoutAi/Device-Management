@@ -31,8 +31,7 @@ def upload_image(image: ndarray, path: str, filename: str):
         blob.upload_from_string(
             compressed_img.tobytes(), 
             content_type='image/jpeg',
-            timeout=60,  # Add timeout
-            num_retries=3
+            timeout=60  # Add timeout
         )
     except Exception as e:
         print(f'Upload failed: {e}')
