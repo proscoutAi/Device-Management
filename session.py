@@ -3,8 +3,9 @@ from threading import Thread
 from time import sleep
 
 from camera import Camera
-from upload import upload_image
+from upload import upload_image,upload_json
 from concurrent.futures import ThreadPoolExecutor
+import flow_meter
 
 executor = ThreadPoolExecutor(max_workers=5)
 
@@ -15,6 +16,7 @@ with open("/Users/ronenrayten/Spray Detection MVP/SprayDetectionUnet/ProScout-ma
 time_format = '%Y-%m-%d_%H-%M-%S'
 path_format = 'device {device_id}/session {start_time}/'
 file_format = 'snap {snap_time}.png'
+json_file = 'snap {snap_time}.json'
 
 
 def get_path(device_id: int, start_time: datetime) -> str:
@@ -22,7 +24,7 @@ def get_path(device_id: int, start_time: datetime) -> str:
 
 
 def get_filename(snap_time: datetime) -> str:
-    return file_format.format(snap_time=snap_time.strftime(time_format))
+    return file_format.format(snap_time=snap_time.strftime(time_format)),json_file.format(snap_time=snap_time.strftime(time_format))
 
 
 class Session:
@@ -49,12 +51,15 @@ class Session:
 
         while self.running:
             image_arr = self.camera.snap()
+            flow_counter = flow_meter.get_counter_and_reset()
             snap_time = datetime.now()
 
             path = get_path(client_device_id, self.start_time)
-            filename = get_filename(snap_time)
+            filename,json_file = get_filename(snap_time)
 
             executor.submit(upload_image, image_arr, path, filename)
+            if flow_counter >0:
+              executor.submit(upload_json,flow_counter,path,json_file)
 
             sleep(self.interval)
         self.camera.release()

@@ -35,3 +35,15 @@ def upload_image(image: ndarray, path: str, filename: str):
         )
     except Exception as e:
         print(f'Upload failed: {e}')
+
+def upload_json(counter, path: str, filename: str):
+    try:
+        blob = bucket.blob(path + filename)
+        json_txt = f"<counter>{counter}</counter>"
+        blob.upload_from_string(
+                json_txt.tobytes(), 
+                content_type='text/plain',
+                timeout=60  # Add timeout
+            )
+    except Exception as e:
+        print(f'Upload failed: {e}')
