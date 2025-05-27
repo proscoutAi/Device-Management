@@ -3,6 +3,7 @@ import os
 import cv2
 from google.cloud import storage
 from numpy import ndarray
+import json
 
 # https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev
 
@@ -36,12 +37,14 @@ def upload_image(image: ndarray, path: str, filename: str):
     except Exception as e:
         print(f'Upload failed: {e}')
 
-def upload_json(counter, path: str, filename: str):
+def upload_json(counter, path: str, filename: str,sleep_interval):
     try:
         blob = bucket.blob(path + filename)
-        json_txt = f"<counter>{counter}</counter>"
+        json_txt = json.dumps({"counter": counter, "interval": sleep_interval})
+
+        #print(json_txt)
         blob.upload_from_string(
-                json_txt.tobytes(), 
+                json_txt, 
                 content_type='text/plain',
                 timeout=60  # Add timeout
             )

@@ -5,18 +5,29 @@ from time import sleep
 from camera import Camera
 from upload import upload_image,upload_json
 from concurrent.futures import ThreadPoolExecutor
-import flow_meter
+from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter
+import configparser
+import os
+
+# read input folder from config file
+if not os.path.exists('config.ini'):
+    raise ValueError("Configuration file 'config.ini' not found. Please create it.")
+config = configparser.ConfigParser()
+config.read('config.ini')
+sleep_interval = int(config.get('Setup','sleep_interval').strip('"').strip("'"))
+
 
 executor = ThreadPoolExecutor(max_workers=5)
 
 # Read the unique identifier (UUID or MAC address)
-with open("/Users/ronenrayten/Spray Detection MVP/SprayDetectionUnet/ProScout-master/camera/device_id.txt", "r") as f:
+with open("/home/proscout/ProScout-master/camera/device_id.txt", "r") as f:
       client_device_id = f.read().strip()
 
 time_format = '%Y-%m-%d_%H-%M-%S'
 path_format = 'device {device_id}/session {start_time}/'
 file_format = 'snap {snap_time}.png'
 json_file = 'snap {snap_time}.json'
+
 
 
 def get_path(device_id: int, start_time: datetime) -> str:
@@ -32,7 +43,7 @@ class Session:
 
     default_interval = 3
 
-    def __init__(self, camera_index: int = 0, interval: int = default_interval):
+    def __init__(self, camera_index: int = 0):
         """
         @param camera_index: The index of the camera device to use
         @param interval: The interval in seconds between each image capture
@@ -40,29 +51,31 @@ class Session:
 
         self.running = False
         self.start_time = None
-        self.interval = interval
+        self.interval = sleep_interval
         self.camera_index = camera_index
         self.camera = None
         self.thread = None
         self.upload_threads = []
+        
 
     def run(self):
         """The main loop of the session"""
 
         while self.running:
             image_arr = self.camera.snap()
-            flow_counter = flow_meter.get_counter_and_reset()
+            flow_counter = get_counter_and_reset()
             snap_time = datetime.now()
 
             path = get_path(client_device_id, self.start_time)
             filename,json_file = get_filename(snap_time)
 
             executor.submit(upload_image, image_arr, path, filename)
-            if flow_counter >0:
-              executor.submit(upload_json,flow_counter,path,json_file)
+            if flow_counter>0:
+                executor.submit(upload_json,flow_counter,path,json_file,self.interval)
 
             sleep(self.interval)
         self.camera.release()
+        cleanup()
 
     def start(self) -> bool:
         """
@@ -73,6 +86,8 @@ class Session:
 
         if self.running:
             return False
+        
+        setup_flow_meter()
 
         self.running = True
         self.start_time = datetime.now()
