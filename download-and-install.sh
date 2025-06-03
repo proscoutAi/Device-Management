@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Interactive GCP Authentication Installer for Camera Management
+# Interactive GCP Authentication Installer for Device Management
 # This script prompts for GCP credentials and handles installation
 
 # Exit on any error
@@ -32,12 +32,12 @@ fi
 
 # Configuration
 BUCKET_NAME="rpi-installation-script"
-OBJECT_PATH="v1.0/Camera Management.zip"
+OBJECT_PATH="v1.0/Device Management.zip"
 GCS_URL="gs://${BUCKET_NAME}/${OBJECT_PATH}"
 BROWSER_URL="https://storage.cloud.google.com/${BUCKET_NAME}/${OBJECT_PATH}"
-TEMP_DIR="/tmp/camera-manager-install"
+TEMP_DIR="/tmp/device-manager-install"
 SERVICE_USER="proscout"
-CONFIG_DIR="/home/${SERVICE_USER}/camera-manager/config"
+CONFIG_DIR="/home/${SERVICE_USER}/device-manager/config"
 GOOGLE_CREDS_FILE="${CONFIG_DIR}/google-credentials.json"
 
 # Check if gcloud is installed
@@ -135,7 +135,7 @@ case $AUTH_OPTION in
 esac
 
 # Download the file
-print_status "Downloading Camera Management package..."
+print_status "Downloading Device Management package..."
 
 if [ "$AUTH_OPTION" -eq 3 ]; then
     # Manual download path
@@ -150,11 +150,11 @@ if [ "$AUTH_OPTION" -eq 3 ]; then
         exit 1
     fi
     
-    cp "$MANUAL_PATH" "Camera Management.zip"
+    cp "$MANUAL_PATH" "Device Management.zip"
     print_status "File copied successfully!"
 else
     # Try downloading with gsutil
-    if gsutil cp "${GCS_URL}" "Camera Management.zip"; then
+    if gsutil cp "${GCS_URL}" "Device Management.zip"; then
         print_status "Download successful using gsutil!"
     else
         print_warning "gsutil download failed. Listing available files in bucket..."
@@ -174,21 +174,21 @@ else
             exit 1
         fi
         
-        cp "$MANUAL_PATH" "Camera Management.zip"
+        cp "$MANUAL_PATH" "Device Management.zip"
         print_status "File copied successfully!"
     fi
 fi
 
 # Verify the ZIP file
 print_status "Verifying downloaded ZIP file..."
-if ! unzip -t "Camera Management.zip" &>/dev/null; then
+if ! unzip -t "Device Management.zip" &>/dev/null; then
     print_error "The file doesn't appear to be a valid ZIP file"
     exit 1
 fi
 
 # Extract the ZIP file
 print_status "Extracting ZIP file..."
-unzip -q "Camera Management.zip"
+unzip -q "Device Management.zip"
 
 # Remove Mac-specific files
 find . -name ".DS_Store" -delete
@@ -206,33 +206,33 @@ if [ -n "$INSTALL_SCRIPT" ]; then
     # Change to the directory containing install.sh
     cd "$(dirname "$INSTALL_SCRIPT")"
     
-    # Save authentication for the camera application
+    # Save authentication for the Device application
     mkdir -p "$(dirname "$GOOGLE_CREDS_FILE")"
     
     if [ "$AUTH_OPTION" -eq 2 ]; then
-        # Copy service account key for the camera application
+        # Copy service account key for the Device application
         cp "$KEY_PATH" "$GOOGLE_CREDS_FILE"
         chmod 600 "$GOOGLE_CREDS_FILE"
         chown ${SERVICE_USER}:${SERVICE_USER} "$GOOGLE_CREDS_FILE"
-        print_status "Service account key saved for the camera application"
+        print_status "Service account key saved for the Device application"
     else
-        # Create a dedicated service account for the camera application
-        print_status "Creating a dedicated service account for the camera application..."
+        # Create a dedicated service account for the Device application
+        print_status "Creating a dedicated service account for the Device application..."
         
         # Get current project ID
         PROJECT_ID=$(gcloud config get-value project)
         
         if [ -z "$PROJECT_ID" ]; then
-            print_warning "Could not determine project ID. Setting up authentication for the camera application may fail."
+            print_warning "Could not determine project ID. Setting up authentication for the device application may fail."
         else
-            SERVICE_ACCOUNT_NAME="camera-manager-service"
+            SERVICE_ACCOUNT_NAME="device-manager-service"
             
             # Check if service account already exists
             if ! gcloud iam service-accounts describe "${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" &>/dev/null; then
                 print_status "Creating service account: ${SERVICE_ACCOUNT_NAME}"
                 gcloud iam service-accounts create "${SERVICE_ACCOUNT_NAME}" \
-                    --description="Service account for Raspberry Pi Camera Manager" \
-                    --display-name="Camera Manager Service Account"
+                    --description="Service account for Raspberry Pi Device Manager" \
+                    --display-name="Device Manager Service Account"
                 
                 # Grant necessary permissions
                 print_status "Granting storage permissions..."
