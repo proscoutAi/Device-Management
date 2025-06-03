@@ -3,6 +3,9 @@ import uuid
 from gpiozero import LED,Button
 from time import sleep
 import time
+import sys
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 Blue = LED(17)
 Yellow=LED(18)

@@ -2,15 +2,20 @@ import subprocess
 import re
 import time
 from datetime import datetime
+import sys
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 def get_coordinates():
         """Get current GPS coordinates"""
         try:
             # Get location data
+            print ("Getting GPS data")
             result = subprocess.run([
-                'mmcli', '--location-get'], capture_output=True, text=True, check=True)
+                'sudo','mmcli','-m',"0", '--location-get'], capture_output=True, text=True, check=True)
             
             output = result.stdout
+           
             
             # Parse latitude and longitude
             lat_match = re.search(r'latitude:\s*([+-]?\d+\.\d+)', output)

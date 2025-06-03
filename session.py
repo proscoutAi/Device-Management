@@ -9,6 +9,9 @@ from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter
 import configparser
 import os
 from gps_manager import get_coordinates
+import sys
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 # read input folder from config file
 if not os.path.exists('config.ini'):
@@ -68,19 +71,22 @@ class Session:
             lon = 0
             
             gps_data = get_coordinates()
-            if gps_data['latitude'] is not None or gps_data['longitude'] is not None:
-                lat = gps_data['latitude']
-                lon = gps_data['longitude']
-            
-            flow_counter = get_counter_and_reset()
-            snap_time = datetime.now()
+            if gps_data is not None:
+              if 'latitude' in gps_data and gps_data['latitude']:
+                  lat = gps_data['latitude']
+              if 'longitude' in gps_data and gps_data['longitude']:
+                  lon = gps_data['longitude']
+              
+              print (f"lat:{lat} lon:{lon}")
+              
+              flow_counter = get_counter_and_reset()
+              snap_time = datetime.now()
 
-            path = get_path(client_device_id, self.start_time)
-            filename,json_file = get_filename(snap_time)
+              path = get_path(client_device_id, self.start_time)
+              filename,json_file = get_filename(snap_time)
 
-            executor.submit(upload_image, image_arr, path, filename)
-            if flow_counter>0:
-                executor.submit(upload_json,flow_counter,path,json_file,self.interval,lat,lon)
+              executor.submit(upload_image, image_arr, path, filename)
+              executor.submit(upload_json,flow_counter,path,json_file,self.interval,lat,lon)
 
             sleep(self.interval)
         self.camera.release()

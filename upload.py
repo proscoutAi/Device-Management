@@ -4,6 +4,9 @@ import cv2
 from google.cloud import storage
 from numpy import ndarray
 import json
+import sys
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 # https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev
 
