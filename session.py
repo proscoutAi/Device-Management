@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter
 import configparser
 import os
+from gps_manager import get_coordinates
 
 # read input folder from config file
 if not os.path.exists('config.ini'):
@@ -63,6 +64,14 @@ class Session:
 
         while self.running:
             image_arr = self.camera.snap()
+            lat = 0
+            lon = 0
+            
+            gps_data = get_coordinates()
+            if gps_data['latitude'] is not None or gps_data['longitude'] is not None:
+                lat = gps_data['latitude']
+                lon = gps_data['longitude']
+            
             flow_counter = get_counter_and_reset()
             snap_time = datetime.now()
 
@@ -71,7 +80,7 @@ class Session:
 
             executor.submit(upload_image, image_arr, path, filename)
             if flow_counter>0:
-                executor.submit(upload_json,flow_counter,path,json_file,self.interval)
+                executor.submit(upload_json,flow_counter,path,json_file,self.interval,lat,lon)
 
             sleep(self.interval)
         self.camera.release()
