@@ -67,17 +67,13 @@ class Session:
 
         while self.running:
             image_arr = self.camera.snap()
-            lat = 0
-            lon = 0
+            
             
             gps_data = get_coordinates()
             if gps_data is not None:
-              if 'latitude' in gps_data and gps_data['latitude']:
-                  lat = gps_data['latitude']
-              if 'longitude' in gps_data and gps_data['longitude']:
-                  lon = gps_data['longitude']
+      
               
-              print (f"lat:{lat} lon:{lon}")
+              print (f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
               
               flow_counter = get_counter_and_reset()
               snap_time = datetime.now()
@@ -86,7 +82,7 @@ class Session:
               filename,json_file = get_filename(snap_time)
 
               executor.submit(upload_image, image_arr, path, filename)
-              executor.submit(upload_json,flow_counter,path,json_file,self.interval,lat,lon)
+              executor.submit(upload_json,flow_counter,path,json_file,self.interval,gps_data)
 
             sleep(self.interval)
         self.camera.release()

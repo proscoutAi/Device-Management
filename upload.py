@@ -40,11 +40,11 @@ def upload_image(image: ndarray, path: str, filename: str):
     except Exception as e:
         print(f'Upload failed: {e}')
 
-def upload_json(counter, path: str, filename: str,sleep_interval,lat,lon):
+def upload_json(counter, path: str, filename: str,sleep_interval,gps_data):
     try:
         blob = bucket.blob(path + filename)
-        if lat !=0 and lon!=0:
-            json_txt = json.dumps({"counter": counter, "interval": sleep_interval,"lat":lat,"lon":lon})
+        
+        json_txt = json.dumps({"counter": counter, "interval": sleep_interval,"lat":gps_data['latitude'],"lon":gps_data['longitude'],"velocity":gps_data['speed_kmh'],"heading":gps_data['heading']})
 
         #print(json_txt)
         blob.upload_from_string(
