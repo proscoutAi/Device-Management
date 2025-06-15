@@ -5,13 +5,16 @@ from google.cloud import storage
 from numpy import ndarray
 import json
 import sys
+import configparser
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 # https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev
 
 # Connect to Google Cloud Storage
-upload_bucket = 'unet-inference'
+config = configparser.ConfigParser()
+config.read('config.ini')
+upload_bucket = int(config.get('Setup','sleep_interval').strip('"').strip("'"))
 
 storage_client = storage.Client()
 bucket = storage_client.bucket(upload_bucket)
