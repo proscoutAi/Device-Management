@@ -18,9 +18,14 @@ if not os.path.exists('config.ini'):
     raise ValueError("Configuration file 'config.ini' not found. Please create it.")
 config = configparser.ConfigParser()
 config.read('config.ini')
-sleep_interval = int(config.get('Setup','sleep_interval').strip('"').strip("'"))
-cloud_function_url = config.get('Setup','cloud_function_url').strip('"').strip("'")
 
+sleep_interval = config.getint('Setup', 'sleep_interval')
+camera_connected = config.getboolean('Setup', 'camera')
+flow_meter_connected = config.getboolean('Setup', 'flow_meter')
+production = config.getboolean('Setup', 'production')
+url_key = 'cloud_function_url_prod' if production else 'cloud_function_url_stg'
+cloud_function_url = config.get('Setup', url_key)
+print(f"working cloud url is:{cloud_function_url}")
 
 executor = ThreadPoolExecutor(max_workers=5)
 
@@ -56,24 +61,30 @@ class Session:
     def run(self):
         """The main loop of the session"""
 
+        print("in session running.....")
         while self.running:
-            image = self.camera.snap_as_base64()
-            
             
             gps_data = get_coordinates()
+            
             if gps_data is not None:
-      
-              
+            
               print (f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
+              image = None
+
+              if camera_connected:
+                image = self.camera.snap_as_base64()
+
               
-              flow_counter = get_counter_and_reset()
+              flow_counter=0
+              if flow_meter_connected:
+                flow_counter = get_counter_and_reset()
+                
               snap_time = datetime.now()
 
               executor.submit(self.upload_class.upload_json,snap_time,flow_counter,gps_data,image)
 
             sleep(self.interval)
-        self.camera.release()
-        cleanup()
+    
 
     def start(self) -> bool:
         """
@@ -90,7 +101,12 @@ class Session:
 
         self.running = True
         self.start_time = datetime.now()
-        self.camera = Camera(self.camera_index)
+        try:
+          self.camera = Camera(self.camera_index)
+        except Exception as e:
+          print("Camera is disconnected or cannot be opened. Continue without image capturing")
+          camera_connected = False
+          
         self.thread = Thread(target=self.run)
         self.thread.start()
 
@@ -108,11 +124,15 @@ class Session:
 
         self.running = False
         self.start_time = None
+        
+        if self.camera:
+          self.camera.release()
+        cleanup()
+
 
         print('Waiting for uploads to finish')
 
         self.thread.join()
-        for upload_thread in self.upload_threads:
-            upload_thread.join()
+        
 
         return True

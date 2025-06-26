@@ -22,8 +22,10 @@ class GPSManager:
                 'org.freedesktop.DBus.ObjectManager')
             modems = mm.GetManagedObjects()
             
+            
             # Find the first modem and connect to its location interface
             for modem_path in modems:
+                print(modem_path)
                 if 'org.freedesktop.ModemManager1.Modem' in modems[modem_path]:
                     modem = self.bus.get_object('org.freedesktop.ModemManager1', modem_path)
                     self.location_interface = dbus.Interface(

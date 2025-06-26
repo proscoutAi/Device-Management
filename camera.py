@@ -37,6 +37,7 @@ class Camera:
         """
 
         ret, frame = self.capture.read()
+        frame = cv2.resize(frame, (640, 640))
         if not ret:
             raise Exception('Failed to capture image')
 
@@ -51,6 +52,7 @@ class Camera:
         @raises Exception: If capture fails
         """
         ret, frame = self.capture.read()
+        frame = cv2.resize(frame, (640, 640))
         if not ret:
             raise Exception('Failed to capture image')
         

@@ -30,27 +30,27 @@ class CloudFunctionClient:
     def upload_json(self,timestamp,flow_meter_counter,gps_data,image):
      try:
             
-        json_txt = json.dumps({"uuid": self.device_uuid,
-                               "session_timestamp": self.session_timestamp,
-                               "timestamp": timestamp,
-                               "interval":self.sleep_interval,
+        json_txt = {"device_uuid": self.device_uuid,
+                               "sessionTimestamp": self.session_start_time.isoformat(),
+                               "timestamp": timestamp.isoformat(),
+                               "sleep_time":self.sleep_interval,
                                "flow_meter_counter": flow_meter_counter,
                                "latitude":gps_data['latitude'],
-                               "longtitude": gps_data['longitude'],
+                               "longitude": gps_data['longitude'],
                                "speed_kmh":gps_data['speed_kmh'],
                                "heading":gps_data['heading'],
-                               "image":image})
+                               "image_base_64":image}
 
         #send json to google run function
         # Send HTTP POST request
         response = requests.post(
-                f"{self.cloud_function_url}/parse-json",
+                f"{self.cloud_function_url}/ingest",
                 json=json_txt,
                 headers={'Content-Type': 'application/json'},
                 timeout=30
             )
             
-        if response.status_code == 200:
+        if response.status_code == 201:
                 print("✅ Data sent successfully!")
                 return response.json()
         else:

@@ -16,15 +16,14 @@ def main():
     """A main function to interact with sessions"""
 
     session = Session()
-
-    Yellow.toggle()
+    session.start()
+    
     while True:
 
-        print('Starting session')
         Blue.toggle()
         sleep(0.2)
 
-        session.start()
+        
 
 
 if __name__ == '__main__':

@@ -87,6 +87,12 @@ def cleanup():
     
     try:
         if chip is not None:
+            try:
+                lgpio.gpio_free(chip, FLOW_PIN)
+                print(f"✅ GPIO pin {FLOW_PIN} freed")
+            except:
+                pass
+                
             lgpio.gpiochip_close(chip)
             chip = None
             print("✅ GPIO chip closed")
@@ -105,29 +111,38 @@ def setup_flow_meter():
     
     print(f"🚀 Setting up flow meter on GPIO pin {FLOW_PIN}...")
     
+    # Force cleanup any existing resources first
+    cleanup()
+    time.sleep(0.1)  # Give threads time to stop
+    
     try:
-        # Open GPIO chip
-        chip = lgpio.gpiochip_open(0)
-        print(f"✅ GPIO chip opened: {chip}")
+        for attempt in range(5):
+            try:
+                # Open GPIO chip
+                chip = lgpio.gpiochip_open(0)
+                print(f"✅ GPIO chip opened: {chip}")
+                
+                # Claim pin as input with pull-up
+                lgpio.gpio_claim_input(chip, FLOW_PIN, lgpio.SET_PULL_UP)
+                print(f"✅ GPIO pin {FLOW_PIN} claimed as input with pull-up")
+                
+                # Read initial state
+                initial_state = lgpio.gpio_read(chip, FLOW_PIN)
+                print(f"📍 Initial pin state: {initial_state}")
+                break
+            except Exception as e:
+                if "GPIO busy" in str(e) and attempt < 4:
+                    print(f"⚠️ GPIO busy, retrying in 1s... (attempt {attempt + 1}/5)")
+                    cleanup()
+                    time.sleep(1.0)
+                else:
+                    raise
         
-        # Claim pin as input with pull-up
-        lgpio.gpio_claim_input(chip, FLOW_PIN, lgpio.SET_PULL_UP)
-        print(f"✅ GPIO pin {FLOW_PIN} claimed as input with pull-up")
+        # Reset cleanup flag since we're starting fresh
+        global cleanup_done
+        cleanup_done = False
         
-        # Read initial state
-        initial_state = lgpio.gpio_read(chip, FLOW_PIN)
-        print(f"📍 Initial pin state: {initial_state}")
-        
-        # Try to set up callback first
-        '''
-        try:
-            callback_id = lgpio.callback(chip, FLOW_PIN, lgpio.BOTH_EDGES, pulse_callback)
-            print(f"✅ Callback registered: {callback_id}")
-        except Exception as e:
-            print(f"⚠️ Callback registration failed: {e}")
-            callback_id = None
-        '''
-        # Start polling as backup
+        # Start polling
         polling_active = True
         polling_thread = threading.Thread(target=polling_monitor, daemon=True)
         polling_thread.start()
@@ -140,17 +155,6 @@ def setup_flow_meter():
         
         print(f"🎉 Flow meter setup complete!")
         
-        # Test the setup
-        '''
-        print("🧪 Testing for 5 seconds - ACTIVATE YOUR FLOW METER NOW!")
-        time.sleep(5)
-        
-        with lock:
-            if pulse_count > 0:
-                print(f"✅ Flow meter is working! Detected {pulse_count} pulses during test")
-            else:
-                print("⚠️ No pulses detected during test - try activating the flow meter")
-        '''
     except lgpio.error as e:
         print(f"❌ GPIO Error during setup: {e}")
         cleanup()
