@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 
 import cv2
@@ -6,54 +7,61 @@ from numpy import ndarray
 import json
 import sys
 import configparser
+
+import requests
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev
-
-# Connect to Google Cloud Storage
-config = configparser.ConfigParser()
-config.read('config.ini')
-upload_bucket = int(config.get('Setup','sleep_interval').strip('"').strip("'"))
-
-storage_client = storage.Client()
-bucket = storage_client.bucket(upload_bucket)
-
-# Create a temporary storage directory
-temp_storage = 'temp/'
-
-if not os.path.exists(temp_storage):
-    os.makedirs(temp_storage)
-
-for file in os.listdir(temp_storage):
-    os.remove(temp_storage + file)
-def upload_image(image: ndarray, path: str, filename: str):
-    try:
-        # Compress and save to memory
-        _, compressed_img = cv2.imencode('.jpg', image, 
-            [cv2.IMWRITE_JPEG_QUALITY, 75])
-
-        # Upload directly from memory
-        blob = bucket.blob(path + filename)
-        blob.upload_from_string(
-            compressed_img.tobytes(), 
-            content_type='image/jpeg',
-            timeout=60  # Add timeout
-        )
-    except Exception as e:
-        print(f'Upload failed: {e}')
-
-def upload_json(counter, path: str, filename: str,sleep_interval,gps_data):
-    try:
-        blob = bucket.blob(path + filename)
+class CloudFunctionClient:
+    def __init__(self, cloud_function_url, device_uuid, sleep_interval):
+        """
+        Initialize the client
         
-        json_txt = json.dumps({"counter": counter, "interval": sleep_interval,"lat":gps_data['latitude'],"lon":gps_data['longitude'],"velocity":gps_data['speed_kmh'],"heading":gps_data['heading']})
+        Args:
+            cloud_function_url: Your Cloud Function HTTP trigger URL
+            device_uuid: Your device's UUID
+            enable_camera: Whether to initialize camera for image capture
+        """
+        self.cloud_function_url = cloud_function_url.rstrip('/')
+        self.device_uuid = device_uuid
+        self.session_start_time = datetime.now()
+        self.sleep_interval = sleep_interval
 
-        #print(json_txt)
-        blob.upload_from_string(
-                json_txt, 
-                content_type='text/plain',
-                timeout=60  # Add timeout
+    def upload_json(self,timestamp,flow_meter_counter,gps_data,image):
+     try:
+            
+        json_txt = json.dumps({"uuid": self.device_uuid,
+                               "session_timestamp": self.session_timestamp,
+                               "timestamp": timestamp,
+                               "interval":self.sleep_interval,
+                               "flow_meter_counter": flow_meter_counter,
+                               "latitude":gps_data['latitude'],
+                               "longtitude": gps_data['longitude'],
+                               "speed_kmh":gps_data['speed_kmh'],
+                               "heading":gps_data['heading'],
+                               "image":image})
+
+        #send json to google run function
+        # Send HTTP POST request
+        response = requests.post(
+                f"{self.cloud_function_url}/parse-json",
+                json=json_txt,
+                headers={'Content-Type': 'application/json'},
+                timeout=30
             )
-    except Exception as e:
-        print(f'Upload failed: {e}')
+            
+        if response.status_code == 200:
+                print("✅ Data sent successfully!")
+                return response.json()
+        else:
+                print(f"❌ Error: {response.status_code}")
+                print(f"Response: {response.text}")
+                return {'error': f'HTTP {response.status_code}: {response.text}'}
+                
+     except requests.exceptions.RequestException as e:
+            print(f"❌ Network error: {e}")
+            return {'error': f'Network error: {str(e)}'}
+     except Exception as e:
+            print(f"❌ Unexpected error: {e}")
+            return {'error': f'Unexpected error: {str(e)}'}
+            

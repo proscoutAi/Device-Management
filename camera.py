@@ -1,3 +1,4 @@
+import base64
 import cv2 as cv2
 from numpy import ndarray
 
@@ -40,6 +41,31 @@ class Camera:
             raise Exception('Failed to capture image')
 
         return frame
+    
+    def snap_as_base64(self, quality: int = 85) -> str:
+        """
+        Capture an image and return it as base64 encoded JPEG
+        
+        @param quality: JPEG quality (1-100, higher = better quality/larger size)
+        @return: Base64 encoded JPEG string
+        @raises Exception: If capture fails
+        """
+        ret, frame = self.capture.read()
+        if not ret:
+            raise Exception('Failed to capture image')
+        
+        # Encode frame directly to JPEG bytes
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, quality]
+        success, jpeg_buffer = cv2.imencode('.jpg', frame, encode_params)
+        
+        if not success:
+            raise Exception('Failed to encode image as JPEG')
+        
+        # Convert to base64
+        jpeg_bytes = jpeg_buffer.tobytes()
+        image_base64 = base64.b64encode(jpeg_bytes).decode('utf-8')
+        
+        return image_base64
 
 
     def release(self):
