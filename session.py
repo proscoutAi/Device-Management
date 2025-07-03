@@ -30,7 +30,7 @@ print(f"working cloud url is:{cloud_function_url}")
 executor = ThreadPoolExecutor(max_workers=5)
 
 # Read the unique identifier (UUID or MAC address)
-with open("/home/proscout/ProScout-master/camera/device_id.txt", "r") as f:
+with open("/home/proscout/ProScout-master/device-manager/device_id.txt", "r") as f:
       client_device_id = f.read().strip()
 
 time_format = '%Y-%m-%d_%H-%M-%S'
@@ -60,32 +60,32 @@ class Session:
 
     def run(self):
         """The main loop of the session"""
-
         print("in session running.....")
-        while self.running:
-            
-            gps_data = get_coordinates()
-            
-            if gps_data is not None:
-            
-              print (f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
-              image = None
-
-              if camera_connected:
-                image = self.camera.snap_as_base64()
-
-              
-              flow_counter=0
-              if flow_meter_connected:
-                flow_counter = get_counter_and_reset()
-                
-              snap_time = datetime.now()
-
-              executor.submit(self.upload_class.upload_json,snap_time,flow_counter,gps_data,image)
-
-            sleep(self.interval)
+ 
     
-
+        while self.running:
+        
+            gps_data = get_coordinates()
+        
+            if gps_data is not None:
+        
+                print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
+                image = None
+                if camera_connected:
+                    image = self.camera.snap_as_base64()
+ 
+                flow_counter = 0
+                if flow_meter_connected:
+                    flow_counter = get_counter_and_reset()
+                
+                snap_time = datetime.now()
+           
+                # Submit the task and store the future
+                executor.submit(self.upload_class.upload_json, snap_time, flow_counter, gps_data, image)
+    
+            
+            sleep(self.interval)
+        
     def start(self) -> bool:
         """
         Start the session
@@ -96,17 +96,26 @@ class Session:
         if self.running:
             return False
         
-        #start flow meter counter thread
-        setup_flow_meter()
-
         self.running = True
+        
+        #start flow meter counter thread
+        if flow_meter_connected:
+          setup_flow_meter()
+
+ 
         self.start_time = datetime.now()
-        try:
-          self.camera = Camera(self.camera_index)
-        except Exception as e:
-          print("Camera is disconnected or cannot be opened. Continue without image capturing")
-          camera_connected = False
-          
+        
+        # Initialize camera if enabled
+        if camera_connected:
+            try:
+                self.camera = Camera(self.camera_index)
+            except Exception as e:
+                print(f"Camera is disconnected or cannot be opened: {e}")
+                print("Continue without image capturing")
+                self.camera = None
+        else:
+            self.camera = None
+            
         self.thread = Thread(target=self.run)
         self.thread.start()
 
@@ -129,10 +138,8 @@ class Session:
           self.camera.release()
         cleanup()
 
-
         print('Waiting for uploads to finish')
 
         self.thread.join()
         
-
         return True

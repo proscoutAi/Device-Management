@@ -2,6 +2,7 @@
 
 # Complete installation script for Device Management software
 # For Raspberry Pi 5 - Updated with Pi 5 optimizations and cellular modem setup
+# Merged version with enhanced permissions and PolicyKit support
 
 # Define colors for output
 RED='\033[0;31m'
@@ -46,6 +47,8 @@ print_status "Starting Device Manager installation for Raspberry Pi 5..."
 if ! id "${SERVICE_USER}" &>/dev/null; then
     print_status "Creating ${SERVICE_USER} user..."
     useradd -m -s /bin/bash "${SERVICE_USER}"
+    # Disable password for service account (security best practice)
+    passwd -d "${SERVICE_USER}"
 else
     print_status "User ${SERVICE_USER} already exists."
 fi
@@ -60,7 +63,7 @@ apt update
 apt install -y python3-pip python3-venv python3-dev python3-opencv git curl unzip uuid-runtime \
     python3-gpiozero python3-lgpio lgpio python3-libgpiod gpiod i2c-tools modemmanager \
     modemmanager-dev libmm-glib-dev gpsd gpsd-clients libgps-dev screen network-manager \
-    libqmi-utils
+    libqmi-utils policykit-1 python3-dbus libdbus-1-dev dbus python3-gi python3-gi-dev
 
 # Set up GPIO permissions and libraries for Pi 5
 print_status "Setting up GPIO for Pi 5..."
@@ -84,15 +87,98 @@ udevadm control --reload-rules
 udevadm trigger
 print_status "GPIO permissions configured for Pi 5"
 
+# Set up PolicyKit permissions for ModemManager
+print_status "Setting up PolicyKit permissions for ModemManager..."
+
+# Create PolicyKit rule for ModemManager access
+cat > /etc/polkit-1/localauthority/50-local.d/modemmanager.pkla << EOF
+[Allow ModemManager for proscout user]
+Identity=unix-user:${SERVICE_USER}
+Action=org.freedesktop.ModemManager1.*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+
+[Allow ModemManager Device Control for proscout user]
+Identity=unix-user:${SERVICE_USER}
+Action=org.freedesktop.ModemManager1.Device.Control
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+
+[Allow ModemManager Location Services for proscout user]
+Identity=unix-user:${SERVICE_USER}
+Action=org.freedesktop.ModemManager1.Location.*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF
+
+# Set correct permissions for PolicyKit file
+chmod 644 /etc/polkit-1/localauthority/50-local.d/modemmanager.pkla
+print_status "PolicyKit permissions configured for ModemManager"
+
+# Create additional udev rules for modem access
+print_status "Setting up udev rules for modem access..."
+cat > /etc/udev/rules.d/99-modem-permissions.rules << EOF
+# Give dialout group access to modem devices
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1e0e", GROUP="dialout", MODE="0664"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1e0e", GROUP="dialout", MODE="0664"
+
+# Additional modem vendor IDs (add as needed)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="12d1", GROUP="dialout", MODE="0664"  # Huawei
+SUBSYSTEM=="usb", ATTRS{idVendor}=="12d1", GROUP="dialout", MODE="0664"
+
+# Generic USB serial devices
+KERNEL=="ttyUSB*", GROUP="dialout", MODE="0664"
+KERNEL=="ttyACM*", GROUP="dialout", MODE="0664"
+EOF
+
+# Set up camera permissions
+print_status "Setting up camera permissions..."
+cat > /etc/udev/rules.d/99-camera-permissions.rules << EOF
+# Camera device permissions
+SUBSYSTEM=="video4linux", GROUP="video", MODE="0664"
+KERNEL=="video*", GROUP="video", MODE="0664"
+EOF
+
+# Apply udev rules
+udevadm control --reload-rules
+udevadm trigger
+print_status "Device permissions configured"
+
 # Configure Raspberry Pi settings for modem support
 print_status "Configuring Raspberry Pi settings for cellular modem..."
-# Enable serial hardware but disable serial console (required for USB modems)
-raspi-config nonint do_serial 2
-# Enable SPI (sometimes needed for modem communication)
-raspi-config nonint do_spi 0
-# Enable I2C (sometimes needed)
-raspi-config nonint do_i2c 0
-print_status "Raspberry Pi serial, SPI, and I2C interfaces configured"
+
+# Ask user if they want to configure hardware interfaces interactively
+read -p "Do you want to configure hardware interfaces interactively using raspi-config? (y/N): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    print_status "Opening raspi-config for interactive configuration..."
+    print_status "Please enable the following interfaces:"
+    print_status "  - Serial Port: Enable hardware, disable console"
+    print_status "  - SPI: Enable"
+    print_status "  - I2C: Enable"
+    print_status "  - Camera: Enable (if using camera)"
+    raspi-config
+    print_status "Interactive configuration completed"
+else
+    print_status "Using automatic hardware interface configuration..."
+    # Enable serial hardware but disable serial console (required for USB modems)
+    raspi-config nonint do_serial 2
+    # Enable SPI (sometimes needed for modem communication)
+    raspi-config nonint do_spi 0
+    # Enable I2C (sometimes needed)
+    raspi-config nonint do_i2c 0
+    # Optionally enable camera
+    read -p "Enable camera interface? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        raspi-config nonint do_camera 0
+        print_status "Camera interface enabled"
+    fi
+fi
+print_status "Raspberry Pi hardware interfaces configured"
 
 # Set gpiozero to use lgpio backend for Pi 5
 print_status "Configuring GPIO backend for Pi 5..."
@@ -138,6 +224,7 @@ readchar
 requests
 pyserial
 pynmea2
+dbus-python
 EOF
 chown ${SERVICE_USER}:${SERVICE_USER} "${DEVICE_DIR}/requirements.txt"
 print_status "Created Pi 5 optimized requirements.txt"
@@ -576,6 +663,21 @@ case "\$1" in
         echo "Active connections:"
         nmcli device status
         ;;
+    check-permissions)
+        echo "Checking user permissions:"
+        echo "Groups for ${SERVICE_USER}:"
+        groups ${SERVICE_USER}
+        echo ""
+        echo "PolicyKit rules:"
+        ls -la /etc/polkit-1/localauthority/50-local.d/modemmanager.pkla 2>/dev/null || echo "PolicyKit rules not found"
+        echo ""
+        echo "Device permissions:"
+        ls -la /dev/ttyUSB* 2>/dev/null || echo "No ttyUSB devices found"
+        ls -la /dev/video* 2>/dev/null || echo "No video devices found"
+        echo ""
+        echo "Udev rules:"
+        ls -la /etc/udev/rules.d/99-*permissions.rules 2>/dev/null || echo "No custom permission rules found"
+        ;;
     setup-cellular)
         APN="\${2:-net.hotm}"
         echo "Setting up cellular with APN: \$APN"
@@ -593,98 +695,3 @@ case "\$1" in
         echo "Cleaning up duplicate bearers:"
         mmcli -m 0 2>/dev/null | grep -o "/org/freedesktop/ModemManager1/Bearer/[0-9]*" | while read bearer_path; do
             bearer_num=\$(echo "\$bearer_path" | grep -o "[0-9]*\$")
-            if ! mmcli -b "\$bearer_num" 2>/dev/null | grep -q "connected: yes"; then
-                echo "Removing disconnected bearer \$bearer_num"
-                mmcli -m 0 --delete-bearer="\$bearer_num" 2>/dev/null
-            fi
-        done
-        ;;
-    *)
-        echo "Usage: \$0 {start|stop|restart|status|logs|errors|check-devices|setup-cellular [apn]|test-cellular|monitor-cellular|cleanup-bearers}"
-        exit 1
-        ;;
-esac
-EOF
-chmod +x "${SCRIPTS_DIR}/manage.sh"
-
-# Create symbolic link for convenience
-ln -sf "${SCRIPTS_DIR}/manage.sh" "${USER_HOME}/manage-device.sh"
-chown ${SERVICE_USER}:${SERVICE_USER} "${USER_HOME}/manage-device.sh"
-
-# Set ownership for all files
-chown -R ${SERVICE_USER}:${SERVICE_USER} "${INSTALL_DIR}"
-
-# Setup automatic monitoring
-print_status "Setting up automatic cellular monitoring..."
-# Add cron job for cellular monitoring (every 5 minutes)
-(crontab -l 2>/dev/null; echo "*/5 * * * * ${SCRIPTS_DIR}/monitor_cellular.sh") | crontab -
-
-# Add keep-alive ping (every 2 minutes to prevent idle disconnection)
-(crontab -l 2>/dev/null; echo "*/2 * * * * /bin/ping -c 1 8.8.8.8 >/dev/null 2>&1") | crontab -
-
-print_status "Automatic cellular monitoring configured"
-
-# Enable NetworkManager and ModemManager services
-print_status "Enabling NetworkManager and ModemManager services..."
-systemctl enable NetworkManager
-systemctl enable ModemManager
-systemctl start NetworkManager
-systemctl start ModemManager
-
-# Enable service but don't start it yet
-print_status "Enabling service..."
-systemctl daemon-reload
-systemctl enable ${SOFTWARE_NAME}
-
-# Check for required devices and setup cellular if modem is present
-print_status "Checking for required USB modem devices..."
-if [ -e "/dev/ttyUSB2" ] || lsusb | grep -qi sim; then
-    print_status "USB modem device detected - setting up cellular connection"
-    
-    # Wait for ModemManager to detect the modem
-    sleep 10
-    
-    # Setup cellular connection
-    sudo -u ${SERVICE_USER} "${SCRIPTS_DIR}/setup_cellular.sh" "net.hotm"
-    
-    print_status "Starting device manager service..."
-    systemctl start ${SOFTWARE_NAME}
-    
-    # Check service status
-    print_status "Checking service status..."
-    sleep 5
-    if systemctl is-active --quiet ${SOFTWARE_NAME}; then
-        print_status "Service is running successfully!"
-    else
-        print_error "Service failed to start. Checking logs:"
-        journalctl -u ${SOFTWARE_NAME} -n 20
-        echo ""
-        print_error "You can view more logs with:"
-        print_error "sudo journalctl -u ${SOFTWARE_NAME}"
-        print_error "tail -f ${LOGS_DIR}/device-manager.error.log"
-    fi
-else
-    print_warning "USB modem device not found!"
-    print_warning "Available USB devices:"
-    lsusb | grep -i sim || echo "No SIM modem detected"
-    print_warning ""
-    print_warning "Service is enabled but not started."
-    print_warning "Connect your USB modem and run: sudo ~/manage-device.sh setup-cellular"
-fi
-
-print_status "Device Manager installation complete!"
-print_status ""
-print_status "Management commands:"
-print_status "  Check devices:       sudo ~/manage-device.sh check-devices"
-print_status "  Setup cellular:      sudo ~/manage-device.sh setup-cellular [apn]"
-print_status "  Test cellular:       sudo ~/manage-device.sh test-cellular"
-print_status "  Monitor cellular:    sudo ~/manage-device.sh monitor-cellular"
-print_status "  Cleanup bearers:     sudo ~/manage-device.sh cleanup-bearers"
-print_status "  Start service:       sudo ~/manage-device.sh start"
-print_status "  Stop service:        sudo ~/manage-device.sh stop"
-print_status "  View logs:           sudo ~/manage-device.sh logs"
-print_status "  View errors:         sudo ~/manage-device.sh errors"
-print_status ""
-print_status "Note: This script is optimized for Raspberry Pi 5"
-print_status "      GPIO uses lgpio backend instead of pigpio"
-print_status "      Includes automatic cellular modem setup"

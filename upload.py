@@ -28,7 +28,7 @@ class CloudFunctionClient:
 
     def upload_json(self,timestamp,flow_meter_counter,gps_data,image):
      try:
-            
+
         json_txt = {"device_uuid": self.device_uuid,
                                "sessionTimestamp": self.session_start_time.isoformat(),
                                "timestamp": timestamp.isoformat(),
@@ -50,17 +50,17 @@ class CloudFunctionClient:
             )
             
         if response.status_code == 201:
-                print("✅ Data sent successfully!")
+                print("âœ… Data sent successfully!")
                 return response.json()
         else:
-                print(f"❌ Error: {response.status_code}")
+                print(f"âŒ Error: {response.status_code}")
                 print(f"Response: {response.text}")
                 return {'error': f'HTTP {response.status_code}: {response.text}'}
                 
      except requests.exceptions.RequestException as e:
-            print(f"❌ Network error: {e}")
+            print(f"âŒ Network error: {e}")
             return {'error': f'Network error: {str(e)}'}
      except Exception as e:
-            print(f"❌ Unexpected error: {e}")
+            print(f"âŒ Unexpected error: {e}")
             return {'error': f'Unexpected error: {str(e)}'}
             
