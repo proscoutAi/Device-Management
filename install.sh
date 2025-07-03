@@ -1,38 +1,7 @@
-# Install GPIO service and ensure proper permissions
-print_status "Setting up GPIO service and permissions..."
+#!/bin/bash
 
-# Install pigpio if not already installed
-if ! command -v pigpiod &> /dev/null; then
-    apt install -y pigpio
-    print_status "Installed pigpio daemon"
-fi
-
-# Enable and start pigpio daemon
-systemctl enable pigpiod
-systemctl start pigpiod
-print_status "Enabled and started pigpio daemon"
-
-# Create GPIO permissions rule
-cat > /etc/udev/rules.d/99-gpio.rules << EOF
-SUBSYSTEM=="bcm2835-gpiomem", KERNEL=="gpiomem", GROUP="gpio", MODE="0660"
-SUBSYSTEM=="gpio", KERNEL=="gpiochip*", ACTION=="add", GROUP="gpio", MODE="0660"
-EOF
-
-# Create gpio group if it doesn't exist
-if ! getent group gpio >/dev/null; then
-    groupadd -f gpio
-fi
-
-# Make sure our user is in the gpio group
-usermod -aG gpio ${SERVICE_USER}
-
-# Apply the new udev rules
-udevadm control --reload-rules
-udevadm trigger
-print_status "GPIO permissions configured"#!/bin/bash
-
-# Complete installation script for Camera Management software
-# For Raspberry Pi
+# Complete installation script for Device Management software
+# For Raspberry Pi 5 - Updated with Pi 5 optimizations and cellular modem setup
 
 # Define colors for output
 RED='\033[0;31m'
@@ -59,20 +28,19 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Configuration
-SOFTWARE_NAME="camera-manager"
+SOFTWARE_NAME="device-manager"
 SERVICE_USER="proscout"
 USER_HOME="/home/${SERVICE_USER}"
-INSTALL_DIR="${USER_HOME}/${SOFTWARE_NAME}"
-CONFIG_DIR="${INSTALL_DIR}/config"
-VENV_DIR="${INSTALL_DIR}/venv"
+INSTALL_DIR="${USER_HOME}/ProScout-master"
+DEVICE_DIR="${INSTALL_DIR}/device-manager"
+VENV_DIR="${INSTALL_DIR}/ProScout-Device"
 LOGS_DIR="${INSTALL_DIR}/logs"
 SCRIPTS_DIR="${INSTALL_DIR}/scripts"
-GOOGLE_CREDS_FILE="${CONFIG_DIR}/google-credentials.json"
 
 # Get current directory
 CURRENT_DIR=$(pwd)
 
-print_status "Starting installation..."
+print_status "Starting Device Manager installation for Raspberry Pi 5..."
 
 # Create user if doesn't exist and add to required groups
 if ! id "${SERVICE_USER}" &>/dev/null; then
@@ -82,20 +50,61 @@ else
     print_status "User ${SERVICE_USER} already exists."
 fi
 
-# Make sure the user is in the required groups for GPIO and camera access
+# Make sure the user is in the required groups for GPIO, camera, and device access
 print_status "Adding user to required groups..."
-usermod -aG video,dialout,gpio,i2c,spi "${SERVICE_USER}"
+usermod -aG video,dialout,gpio,i2c,spi,tty "${SERVICE_USER}"
 
-# Install system dependencies
-print_status "Installing system dependencies..."
+# Install system dependencies - Pi 5 optimized (removed pigpio, added lgpio)
+print_status "Installing system dependencies for Pi 5..."
 apt update
 apt install -y python3-pip python3-venv python3-dev python3-opencv git curl unzip uuid-runtime \
-    python3-gpiozero python3-rpi.gpio pigpio python3-pigpio i2c-tools
+    python3-gpiozero python3-lgpio lgpio python3-libgpiod gpiod i2c-tools modemmanager \
+    modemmanager-dev libmm-glib-dev gpsd gpsd-clients libgps-dev screen network-manager \
+    libqmi-utils
+
+# Set up GPIO permissions and libraries for Pi 5
+print_status "Setting up GPIO for Pi 5..."
+
+# Create GPIO permissions rule
+cat > /etc/udev/rules.d/99-gpio.rules << EOF
+SUBSYSTEM=="bcm2835-gpiomem", KERNEL=="gpiomem", GROUP="gpio", MODE="0660"
+SUBSYSTEM=="gpio", KERNEL=="gpiochip*", ACTION=="add", GROUP="gpio", MODE="0660"
+EOF
+
+# Create gpio group if it doesn't exist
+if ! getent group gpio >/dev/null; then
+    groupadd -f gpio
+fi
+
+# Make sure our user is in the gpio group
+usermod -aG gpio ${SERVICE_USER}
+
+# Apply the new udev rules  
+udevadm control --reload-rules
+udevadm trigger
+print_status "GPIO permissions configured for Pi 5"
+
+# Configure Raspberry Pi settings for modem support
+print_status "Configuring Raspberry Pi settings for cellular modem..."
+# Enable serial hardware but disable serial console (required for USB modems)
+raspi-config nonint do_serial 2
+# Enable SPI (sometimes needed for modem communication)
+raspi-config nonint do_spi 0
+# Enable I2C (sometimes needed)
+raspi-config nonint do_i2c 0
+print_status "Raspberry Pi serial, SPI, and I2C interfaces configured"
+
+# Set gpiozero to use lgpio backend for Pi 5
+print_status "Configuring GPIO backend for Pi 5..."
+cat >> "${USER_HOME}/.bashrc" << EOF
+# Pi 5 GPIO Configuration
+export GPIOZERO_PIN_FACTORY=lgpio
+EOF
 
 # Create directories
 print_status "Creating directories..."
 mkdir -p "${INSTALL_DIR}"
-mkdir -p "${CONFIG_DIR}"
+mkdir -p "${DEVICE_DIR}"
 mkdir -p "${LOGS_DIR}"
 mkdir -p "${SCRIPTS_DIR}"
 chown -R ${SERVICE_USER}:${SERVICE_USER} "${INSTALL_DIR}"
@@ -104,28 +113,34 @@ chown -R ${SERVICE_USER}:${SERVICE_USER} "${INSTALL_DIR}"
 print_status "Copying Python files..."
 for file in *.py; do
     if [ -f "$file" ]; then
-        cp "$file" "${INSTALL_DIR}/"
-        chmod +x "${INSTALL_DIR}/$file"
+        cp "$file" "${DEVICE_DIR}/"
+        chmod +x "${DEVICE_DIR}/$file"
         print_status "Copied $file"
     fi
 done
 
-# Copy requirements file or create a new one with correct encoding
-print_status "Creating requirements.txt with UTF-8 encoding..."
-# Create a fresh requirements file directly to avoid encoding issues
-cat > "${INSTALL_DIR}/requirements.txt" << EOF
-google-cloud-storage
+# Copy config files if they exist
+if [ -f "config.ini" ]; then
+    cp "config.ini" "${DEVICE_DIR}/"
+    print_status "Copied config.ini"
+fi
+
+# Create requirements file optimized for Pi 5
+print_status "Creating Pi 5 optimized requirements.txt..."
+cat > "${DEVICE_DIR}/requirements.txt" << EOF
 opencv-python
 exifread
 tqdm
 numpy
 gpiozero
-RPi.GPIO
-pigpio
+lgpio
 readchar
+requests
+pyserial
+pynmea2
 EOF
-chown ${SERVICE_USER}:${SERVICE_USER} "${INSTALL_DIR}/requirements.txt"
-print_status "Created requirements.txt with proper encoding"
+chown ${SERVICE_USER}:${SERVICE_USER} "${DEVICE_DIR}/requirements.txt"
+print_status "Created Pi 5 optimized requirements.txt"
 
 # Create virtual environment
 print_status "Creating virtual environment..."
@@ -134,98 +149,386 @@ sudo -u ${SERVICE_USER} python3 -m venv "${VENV_DIR}"
 # Install dependencies
 print_status "Installing Python dependencies..."
 sudo -u ${SERVICE_USER} "${VENV_DIR}/bin/pip" install --upgrade pip
-sudo -u ${SERVICE_USER} "${VENV_DIR}/bin/pip" install -r "${INSTALL_DIR}/requirements.txt"
-
-# Fix paths in Python files
-print_status "Updating paths in Python files..."
-
-# Fix path in session.py if it exists
-if [ -f "${INSTALL_DIR}/session.py" ]; then
-    sed -i "s|/Users/ronenrayten/Spray Detection MVP/SprayDetectionUnet/ProScout-master/camera/device_id.txt|${CONFIG_DIR}/device_id.txt|g" "${INSTALL_DIR}/session.py"
-    print_status "Updated path in session.py"
-fi
-
-# Fix path in pylon_camera.py if it exists
-if [ -f "${INSTALL_DIR}/pylon_camera.py" ]; then
-    sed -i "s|/home/proscout/ProScout-master/camera/device_id.txt|${CONFIG_DIR}/device_id.txt|g" "${INSTALL_DIR}/pylon_camera.py"
-    print_status "Updated path in pylon_camera.py"
-fi
+sudo -u ${SERVICE_USER} "${VENV_DIR}/bin/pip" install -r "${DEVICE_DIR}/requirements.txt"
 
 # Generate device UUID
-if [ ! -f "${CONFIG_DIR}/device_id.txt" ]; then
+if [ ! -f "${DEVICE_DIR}/device_id.txt" ]; then
     print_status "Generating device UUID..."
-    uuidgen > "${CONFIG_DIR}/device_id.txt"
-    chmod 600 "${CONFIG_DIR}/device_id.txt"
-    chown ${SERVICE_USER}:${SERVICE_USER} "${CONFIG_DIR}/device_id.txt"
-    print_status "Generated UUID: $(cat ${CONFIG_DIR}/device_id.txt)"
+    uuidgen > "${DEVICE_DIR}/device_id.txt"
+    chmod 600 "${DEVICE_DIR}/device_id.txt"
+    chown ${SERVICE_USER}:${SERVICE_USER} "${DEVICE_DIR}/device_id.txt"
+    print_status "Generated UUID: $(cat ${DEVICE_DIR}/device_id.txt)"
 fi
 
-# Set up Google Cloud authentication
-print_status "Setting up Google Cloud authentication..."
+# Setup cellular modem configuration
+print_status "Setting up cellular modem configuration..."
 
-# Copy service account key if it exists
-SERVICE_ACCOUNT_KEY="${CURRENT_DIR}/hopeful-summer-438013-t5-8f165de61db2.json"
-if [ -f "${SERVICE_ACCOUNT_KEY}" ]; then
-    print_status "Found service account key in package"
-    cp "${SERVICE_ACCOUNT_KEY}" "${GOOGLE_CREDS_FILE}"
-    chmod 600 "${GOOGLE_CREDS_FILE}"
-    chown ${SERVICE_USER}:${SERVICE_USER} "${GOOGLE_CREDS_FILE}"
+# Add USB power management fix to prevent connection drops
+print_status "Configuring USB power management for cellular modem..."
+cat > /etc/udev/rules.d/99-usb-no-suspend.rules << EOF
+# Disable USB power management for SIM7600 cellular modems to prevent connection drops
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1e0e", ATTRS{idProduct}=="9001", ATTR{power/autosuspend}="-1"
+EOF
+
+# Create cellular modem setup script
+cat > "${SCRIPTS_DIR}/setup_cellular.sh" << 'EOF'
+#!/bin/bash
+
+# Cellular modem setup script
+print_status() {
+    echo -e "\033[0;32m[INFO]\033[0m $1"
+}
+
+print_warning() {
+    echo -e "\033[1;33m[WARN]\033[0m $1"
+}
+
+print_error() {
+    echo -e "\033[0;31m[ERROR]\033[0m $1"
+}
+
+setup_cellular_connection() {
+    local apn="$1"
+    local connection_name="cellular"
     
-    # Test authentication
-    print_status "Testing Google Cloud authentication..."
-    sudo -u ${SERVICE_USER} bash -c "export GOOGLE_APPLICATION_CREDENTIALS='${GOOGLE_CREDS_FILE}' && ${VENV_DIR}/bin/python -c \"
-from google.cloud import storage
-try:
-    client = storage.Client()
-    print('Successfully authenticated as ' + client.project)
-except Exception as e:
-    print('Authentication failed: ' + str(e))
-    exit(1)
-\""
+    print_status "Setting up cellular connection with APN: $apn"
     
-    if [ $? -eq 0 ]; then
-        print_status "Google Cloud authentication successful!"
+    # Check if modem is detected
+    if ! mmcli -L | grep -q "modem"; then
+        print_error "No modem detected by ModemManager"
+        print_error "Available USB devices:"
+        lsusb | grep -i sim || echo "No SIM modem found"
+        return 1
+    fi
+    
+    # Check if connection already exists
+    if nmcli connection show | grep -q "$connection_name"; then
+        print_warning "Connection '$connection_name' already exists, removing..."
+        nmcli connection delete "$connection_name"
+    fi
+    
+    # Create new cellular connection
+    print_status "Creating cellular connection..."
+    if nmcli connection add type gsm ifname cdc-wdm0 con-name "$connection_name" apn "$apn"; then
+        print_status "Cellular connection created successfully"
+        
+        # Set auto-connect and priority
+        nmcli connection modify "$connection_name" connection.autoconnect yes
+        nmcli connection modify "$connection_name" connection.autoconnect-priority 100
+        nmcli connection modify "$connection_name" connection.autoconnect-retries 0
+        nmcli connection modify "$connection_name" ipv4.dhcp-timeout 60
+        
+        # Try to bring up the connection
+        print_status "Activating cellular connection..."
+        if nmcli connection up "$connection_name"; then
+            print_status "Cellular connection activated successfully"
+            
+            # Wait a moment for IP assignment
+            sleep 5
+            
+            # Test connectivity
+            print_status "Testing connectivity..."
+            if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
+                print_status "Cellular internet connection working!"
+                return 0
+            else
+                print_warning "Connection established but internet test failed"
+                print_warning "This might be normal if data plan is not active"
+                return 0
+            fi
+        else
+            print_error "Failed to activate cellular connection"
+            return 1
+        fi
     else
-        print_warning "Authentication test failed. Check the service account key and permissions."
+        print_error "Failed to create cellular connection"
+        return 1
+    fi
+}
+
+# Default APN (can be overridden)
+APN="${1:-net.hotm}"
+
+print_status "Starting cellular modem setup..."
+print_status "Using APN: $APN"
+
+# Wait for modem to be ready
+print_status "Waiting for modem to be detected..."
+for i in {1..30}; do
+    if mmcli -L | grep -q "modem"; then
+        print_status "Modem detected!"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        print_error "Timeout waiting for modem detection"
+        exit 1
+    fi
+    sleep 2
+done
+
+# Check modem status
+print_status "Checking modem status..."
+mmcli -m 0
+
+# Setup cellular connection
+setup_cellular_connection "$APN"
+
+print_status "Cellular setup complete!"
+EOF
+
+chmod +x "${SCRIPTS_DIR}/setup_cellular.sh"
+chown ${SERVICE_USER}:${SERVICE_USER} "${SCRIPTS_DIR}/setup_cellular.sh"
+
+# Create cellular connection monitoring script
+print_status "Creating cellular connection monitoring script..."
+cat > "${SCRIPTS_DIR}/monitor_cellular.sh" << 'EOF'
+#!/bin/bash
+
+# Cellular connection monitoring and auto-recovery script
+
+LOG_FILE="/var/log/cellular_monitor.log"
+
+log_message() {
+    echo "$(date): $1" >> "$LOG_FILE"
+}
+
+check_connectivity() {
+    # Test internet connectivity
+    if ping -c 2 8.8.8.8 >/dev/null 2>&1; then
+        return 0  # Connected
+    else
+        return 1  # Not connected
+    fi
+}
+
+cleanup_bearers() {
+    log_message "Cleaning up duplicate bearers..."
+    # Get list of bearers and remove disconnected ones
+    mmcli -m 0 2>/dev/null | grep -o "/org/freedesktop/ModemManager1/Bearer/[0-9]*" | while read bearer_path; do
+        bearer_num=$(echo "$bearer_path" | grep -o "[0-9]*$")
+        
+        # Check if bearer is connected
+        if ! mmcli -b "$bearer_num" 2>/dev/null | grep -q "connected: yes"; then
+            log_message "Removing disconnected bearer $bearer_num"
+            mmcli -m 0 --delete-bearer="$bearer_num" 2>/dev/null
+        fi
+    done
+}
+
+# Check signal quality and reconnect if too weak
+check_signal_quality() {
+    signal=$(mmcli -m 0 2>/dev/null | grep "signal quality" | awk '{print $4}' | sed 's/%//')
+    if [ -n "$signal" ] && [ "$signal" -lt 15 ]; then
+        log_message "Signal quality too low ($signal%), attempting reconnection"
+        return 1
+    fi
+    return 0
+}
+
+# Main monitoring logic
+if ! check_connectivity || ! check_signal_quality; then
+    log_message "Cellular connectivity issue detected, attempting recovery..."
+    
+    # Clean up broken bearers
+    cleanup_bearers
+    
+    # Try to reconnect
+    nmcli connection down cellular 2>/dev/null
+    sleep 5
+    nmcli connection up cellular 2>/dev/null
+    
+    sleep 10
+    if check_connectivity; then
+        log_message "Cellular connection restored successfully"
+    else
+        log_message "Failed to restore cellular connection"
+    fi
+fi
+EOF
+
+chmod +x "${SCRIPTS_DIR}/monitor_cellular.sh"
+chown ${SERVICE_USER}:${SERVICE_USER} "${SCRIPTS_DIR}/monitor_cellular.sh"
+
+# Create log file for monitoring
+touch /var/log/cellular_monitor.log
+chmod 644 /var/log/cellular_monitor.log
+
+# Create the ProScout startup script with USB device checking and cellular setup
+print_status "Creating ProScout startup script with device verification and cellular setup..."
+cat > "${DEVICE_DIR}/proscout_startup.sh" << 'EOF'
+#!/bin/bash
+
+# Function to check if required USB modem devices are present
+check_usb_modem_devices() {
+    echo "=== Checking for required USB modem devices ==="
+    
+    # Check for ttyUSB2 (GPS/Modem device - common for SIM7600X)
+    if [ ! -e "/dev/ttyUSB2" ]; then
+        echo "WARNING: /dev/ttyUSB2 not found!"
+        echo "Available ttyUSB devices:"
+        ls -la /dev/ttyUSB* 2>/dev/null || echo "No ttyUSB devices found"
+        echo "USB devices:"
+        lsusb | grep -i sim || echo "No SIM modem found"
+        echo "Continuing without GPS/Modem device..."
+        return 1
+    else
+        echo "Found /dev/ttyUSB2 - GPS/Modem device ready"
+        return 0
+    fi
+}
+
+setup_cellular_if_needed() {
+    echo "=== Checking cellular connectivity ==="
+    
+    # Check if cellular connection exists and is active
+    if nmcli connection show --active | grep -q "gsm"; then
+        echo "Cellular connection already active"
+        return 0
+    fi
+    
+    # Check if cellular connection exists but is inactive
+    if nmcli connection show | grep -q "cellular"; then
+        echo "Cellular connection exists, trying to activate..."
+        if nmcli connection up cellular; then
+            echo "Cellular connection activated successfully"
+            return 0
+        else
+            echo "Failed to activate existing cellular connection"
+        fi
+    fi
+    
+    # If no cellular connection, try to set it up
+    echo "No active cellular connection found, attempting setup..."
+    if [ -x "/home/proscout/ProScout-master/scripts/setup_cellular.sh" ]; then
+        /home/proscout/ProScout-master/scripts/setup_cellular.sh
+    else
+        echo "Cellular setup script not found, skipping automatic setup"
+    fi
+}
+
+initialize_gps() {
+    echo "=== GPS initialization ==="
+    
+    # Check if device exists first
+    if ! check_usb_modem_devices; then
+        echo "Skipping GPS initialization - USB modem device not found"
+        return 1
+    fi
+    
+    echo "systemctl stop ModemManager"
+    sudo systemctl stop ModemManager
+    sleep 5
+
+    sudo stty -F /dev/ttyUSB2 115200 raw -echo -cstopb 2>/dev/null
+    printf "AT+CGNSPWR=0\r\n" | sudo tee /dev/ttyUSB2 >/dev/null 2>&1
+    sleep 2
+    printf "AT+CGNSPWR=1\r\n" | sudo tee /dev/ttyUSB2 >/dev/null 2>&1
+    sleep 3
+    printf "AT+CGNSTST=1\r\n" | sudo tee /dev/ttyUSB2 >/dev/null 2>&1
+    sleep 3
+    echo "systemctl start ModemManager"
+    sudo systemctl start ModemManager
+    sleep 30
+
+    # Check if modem is detected
+    if sudo mmcli -L | grep -q "No modems were found"; then
+        echo "No modems detected by ModemManager"
+        return 1
+    fi
+
+    mmcli -m 0 --location-enable-gps-nmea
+    mmcli -m 0 --location-enable-gps-raw
+    mmcli -m 0 --location-set-gps-refresh-rate=2
+    echo "Verifying GPS status..."
+    gps_status=$(sudo mmcli -m 0 --location-status)
+    echo "GPS Status: $gps_status"
+        
+    if echo "$gps_status" | grep -q "gps-nmea" && echo "$gps_status" | grep -q "gps-raw"; then
+        echo "GPS verification: SUCCESS"
+        
+        # Try to get initial GPS data
+        echo "Testing GPS data retrieval..."
+        sudo mmcli -m 0 --location-get | head -20
+        
+        return 0
+    else
+        echo "GPS verification: FAILED"
+        echo "Current GPS status:"
+        sudo mmcli -m 0 --location-status
+        return 1
+    fi
+}
+
+# Wait for system to be ready
+echo "Waiting for system initialization..."
+sleep 10
+
+# Check devices and initialize GPS
+check_usb_modem_devices
+device_check_result=$?
+
+if [ $device_check_result -eq 0 ]; then
+    # Setup cellular connectivity first
+    setup_cellular_if_needed
+    
+    # Then initialize GPS
+    initialize_gps
+    gps_status=$?
+    if [ $gps_status -eq 0 ]; then
+        echo "GPS initialization completed successfully"
+    else
+        echo "GPS initialization failed, but continuing with main application"
     fi
 else
-    print_warning "Service account key not found"
+    echo "Required USB modem devices not found, continuing without GPS"
 fi
 
+# Activate virtual environment
+echo "Activating Python virtual environment..."
+source /home/proscout/ProScout-master/ProScout-Device/bin/activate
 
+# Change to the device-manager directory where config.ini is located
+cd /home/proscout/ProScout-master/device-manager
 
-# Create systemd service file
-print_status "Creating systemd service..."
+# Run your Python script
+echo "Starting ProScout main application..."
+python3 main.py
+EOF
+
+chmod +x "${DEVICE_DIR}/proscout_startup.sh"
+chown ${SERVICE_USER}:${SERVICE_USER} "${DEVICE_DIR}/proscout_startup.sh"
+print_status "Created proscout_startup.sh with device checking and cellular setup"
+
+# Create systemd service file optimized for Pi 5
+print_status "Creating systemd service optimized for Pi 5..."
 cat > "/etc/systemd/system/${SOFTWARE_NAME}.service" << EOF
 [Unit]
-Description=Camera Management Software
-After=network-online.target pigpiod.service
-Wants=network-online.target pigpiod.service
+Description=ProScout Device Management Software
+After=network-online.target NetworkManager.service ModemManager.service
+Wants=network-online.target NetworkManager.service ModemManager.service
 
 [Service]
 Type=simple
 User=${SERVICE_USER}
 Group=${SERVICE_USER}
-WorkingDirectory=${INSTALL_DIR}
-Environment="GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_CREDS_FILE}"
-Environment="PYTHONPATH=${INSTALL_DIR}"
-Environment="GPIOZERO_PIN_FACTORY=pigpio"
-Environment="PIGPIO_ADDR=localhost"
-ExecStart=${VENV_DIR}/bin/python ${INSTALL_DIR}/main.py
+WorkingDirectory=${DEVICE_DIR}
+Environment="PYTHONPATH=${DEVICE_DIR}"
+Environment="GPIOZERO_PIN_FACTORY=lgpio"
+ExecStart=/bin/bash ${DEVICE_DIR}/proscout_startup.sh
 Restart=always
-RestartSec=10
-StandardOutput=append:${LOGS_DIR}/camera-manager.log
-StandardError=append:${LOGS_DIR}/camera-manager.error.log
+RestartSec=30
+StandardOutput=append:${LOGS_DIR}/device-manager.log
+StandardError=append:${LOGS_DIR}/device-manager.error.log
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # Create log files
-touch "${LOGS_DIR}/camera-manager.log"
-touch "${LOGS_DIR}/camera-manager.error.log"
-chown ${SERVICE_USER}:${SERVICE_USER} "${LOGS_DIR}/camera-manager.log"
-chown ${SERVICE_USER}:${SERVICE_USER} "${LOGS_DIR}/camera-manager.error.log"
+touch "${LOGS_DIR}/device-manager.log"
+touch "${LOGS_DIR}/device-manager.error.log"
+chown ${SERVICE_USER}:${SERVICE_USER} "${LOGS_DIR}/device-manager.log"
+chown ${SERVICE_USER}:${SERVICE_USER} "${LOGS_DIR}/device-manager.error.log"
 
 # Create management script
 print_status "Creating management script..."
@@ -252,13 +555,52 @@ case "\$1" in
         sudo systemctl status \$SERVICE_NAME
         ;;
     logs)
-        tail -f \$LOGS_DIR/camera-manager.log
+        tail -f \$LOGS_DIR/device-manager.log
         ;;
     errors)
-        tail -f \$LOGS_DIR/camera-manager.error.log
+        tail -f \$LOGS_DIR/device-manager.error.log
+        ;;
+    check-devices)
+        echo "Checking USB modem devices:"
+        ls -la /dev/ttyUSB* 2>/dev/null || echo "No ttyUSB devices found"
+        echo ""
+        echo "USB devices:"
+        lsusb | grep -i sim || echo "No SIM modem detected"
+        echo ""
+        echo "ModemManager status:"
+        sudo mmcli -L
+        echo ""
+        echo "Cellular connections:"
+        nmcli connection show
+        echo ""
+        echo "Active connections:"
+        nmcli device status
+        ;;
+    setup-cellular)
+        APN="\${2:-net.hotm}"
+        echo "Setting up cellular with APN: \$APN"
+        /home/proscout/ProScout-master/scripts/setup_cellular.sh "\$APN"
+        ;;
+    test-cellular)
+        echo "Testing cellular connectivity:"
+        ping -c 4 8.8.8.8
+        ;;
+    monitor-cellular)
+        echo "Running cellular connection monitor:"
+        /home/proscout/ProScout-master/scripts/monitor_cellular.sh
+        ;;
+    cleanup-bearers)
+        echo "Cleaning up duplicate bearers:"
+        mmcli -m 0 2>/dev/null | grep -o "/org/freedesktop/ModemManager1/Bearer/[0-9]*" | while read bearer_path; do
+            bearer_num=\$(echo "\$bearer_path" | grep -o "[0-9]*\$")
+            if ! mmcli -b "\$bearer_num" 2>/dev/null | grep -q "connected: yes"; then
+                echo "Removing disconnected bearer \$bearer_num"
+                mmcli -m 0 --delete-bearer="\$bearer_num" 2>/dev/null
+            fi
+        done
         ;;
     *)
-        echo "Usage: \$0 {start|stop|restart|status|logs|errors}"
+        echo "Usage: \$0 {start|stop|restart|status|logs|errors|check-devices|setup-cellular [apn]|test-cellular|monitor-cellular|cleanup-bearers}"
         exit 1
         ;;
 esac
@@ -266,27 +608,83 @@ EOF
 chmod +x "${SCRIPTS_DIR}/manage.sh"
 
 # Create symbolic link for convenience
-ln -sf "${SCRIPTS_DIR}/manage.sh" "${USER_HOME}/manage-camera.sh"
-chown ${SERVICE_USER}:${SERVICE_USER} "${USER_HOME}/manage-camera.sh"
+ln -sf "${SCRIPTS_DIR}/manage.sh" "${USER_HOME}/manage-device.sh"
+chown ${SERVICE_USER}:${SERVICE_USER} "${USER_HOME}/manage-device.sh"
 
-# Enable and start service
-print_status "Enabling and starting service..."
+# Set ownership for all files
+chown -R ${SERVICE_USER}:${SERVICE_USER} "${INSTALL_DIR}"
+
+# Setup automatic monitoring
+print_status "Setting up automatic cellular monitoring..."
+# Add cron job for cellular monitoring (every 5 minutes)
+(crontab -l 2>/dev/null; echo "*/5 * * * * ${SCRIPTS_DIR}/monitor_cellular.sh") | crontab -
+
+# Add keep-alive ping (every 2 minutes to prevent idle disconnection)
+(crontab -l 2>/dev/null; echo "*/2 * * * * /bin/ping -c 1 8.8.8.8 >/dev/null 2>&1") | crontab -
+
+print_status "Automatic cellular monitoring configured"
+
+# Enable NetworkManager and ModemManager services
+print_status "Enabling NetworkManager and ModemManager services..."
+systemctl enable NetworkManager
+systemctl enable ModemManager
+systemctl start NetworkManager
+systemctl start ModemManager
+
+# Enable service but don't start it yet
+print_status "Enabling service..."
 systemctl daemon-reload
 systemctl enable ${SOFTWARE_NAME}
-systemctl start ${SERVICE_NAME}
 
-# Check service status
-print_status "Checking service status..."
-sleep 3
-if systemctl is-active --quiet ${SOFTWARE_NAME}; then
-    print_status "Service is running successfully!"
+# Check for required devices and setup cellular if modem is present
+print_status "Checking for required USB modem devices..."
+if [ -e "/dev/ttyUSB2" ] || lsusb | grep -qi sim; then
+    print_status "USB modem device detected - setting up cellular connection"
+    
+    # Wait for ModemManager to detect the modem
+    sleep 10
+    
+    # Setup cellular connection
+    sudo -u ${SERVICE_USER} "${SCRIPTS_DIR}/setup_cellular.sh" "net.hotm"
+    
+    print_status "Starting device manager service..."
+    systemctl start ${SOFTWARE_NAME}
+    
+    # Check service status
+    print_status "Checking service status..."
+    sleep 5
+    if systemctl is-active --quiet ${SOFTWARE_NAME}; then
+        print_status "Service is running successfully!"
+    else
+        print_error "Service failed to start. Checking logs:"
+        journalctl -u ${SOFTWARE_NAME} -n 20
+        echo ""
+        print_error "You can view more logs with:"
+        print_error "sudo journalctl -u ${SOFTWARE_NAME}"
+        print_error "tail -f ${LOGS_DIR}/device-manager.error.log"
+    fi
 else
-    print_error "Service failed to start. Checking logs:"
-    journalctl -u ${SERVICE_NAME} -n 20
-    echo ""
-    print_error "You can view more logs with:"
-    print_error "sudo journalctl -u ${SERVICE_NAME}"
-    print_error "tail -f ${LOGS_DIR}/camera-manager.error.log"
+    print_warning "USB modem device not found!"
+    print_warning "Available USB devices:"
+    lsusb | grep -i sim || echo "No SIM modem detected"
+    print_warning ""
+    print_warning "Service is enabled but not started."
+    print_warning "Connect your USB modem and run: sudo ~/manage-device.sh setup-cellular"
 fi
 
-print_status "Installation complete!"
+print_status "Device Manager installation complete!"
+print_status ""
+print_status "Management commands:"
+print_status "  Check devices:       sudo ~/manage-device.sh check-devices"
+print_status "  Setup cellular:      sudo ~/manage-device.sh setup-cellular [apn]"
+print_status "  Test cellular:       sudo ~/manage-device.sh test-cellular"
+print_status "  Monitor cellular:    sudo ~/manage-device.sh monitor-cellular"
+print_status "  Cleanup bearers:     sudo ~/manage-device.sh cleanup-bearers"
+print_status "  Start service:       sudo ~/manage-device.sh start"
+print_status "  Stop service:        sudo ~/manage-device.sh stop"
+print_status "  View logs:           sudo ~/manage-device.sh logs"
+print_status "  View errors:         sudo ~/manage-device.sh errors"
+print_status ""
+print_status "Note: This script is optimized for Raspberry Pi 5"
+print_status "      GPIO uses lgpio backend instead of pigpio"
+print_status "      Includes automatic cellular modem setup"

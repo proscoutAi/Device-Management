@@ -37,8 +37,6 @@ GCS_URL="gs://${BUCKET_NAME}/${OBJECT_PATH}"
 BROWSER_URL="https://storage.cloud.google.com/${BUCKET_NAME}/${OBJECT_PATH}"
 TEMP_DIR="/tmp/device-manager-install"
 SERVICE_USER="proscout"
-CONFIG_DIR="/home/${SERVICE_USER}/device-manager/config"
-GOOGLE_CREDS_FILE="${CONFIG_DIR}/google-credentials.json"
 
 # Check if gcloud is installed
 if ! command -v gcloud &> /dev/null; then
@@ -205,59 +203,6 @@ if [ -n "$INSTALL_SCRIPT" ]; then
     
     # Change to the directory containing install.sh
     cd "$(dirname "$INSTALL_SCRIPT")"
-    
-    # Save authentication for the Device application
-    mkdir -p "$(dirname "$GOOGLE_CREDS_FILE")"
-    
-    if [ "$AUTH_OPTION" -eq 2 ]; then
-        # Copy service account key for the Device application
-        cp "$KEY_PATH" "$GOOGLE_CREDS_FILE"
-        chmod 600 "$GOOGLE_CREDS_FILE"
-        chown ${SERVICE_USER}:${SERVICE_USER} "$GOOGLE_CREDS_FILE"
-        print_status "Service account key saved for the Device application"
-    else
-        # Create a dedicated service account for the Device application
-        print_status "Creating a dedicated service account for the Device application..."
-        
-        # Get current project ID
-        PROJECT_ID=$(gcloud config get-value project)
-        
-        if [ -z "$PROJECT_ID" ]; then
-            print_warning "Could not determine project ID. Setting up authentication for the device application may fail."
-        else
-            SERVICE_ACCOUNT_NAME="device-manager-service"
-            
-            # Check if service account already exists
-            if ! gcloud iam service-accounts describe "${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" &>/dev/null; then
-                print_status "Creating service account: ${SERVICE_ACCOUNT_NAME}"
-                gcloud iam service-accounts create "${SERVICE_ACCOUNT_NAME}" \
-                    --description="Service account for Raspberry Pi Device Manager" \
-                    --display-name="Device Manager Service Account"
-                
-                # Grant necessary permissions
-                print_status "Granting storage permissions..."
-                gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-                    --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" \
-                    --role="roles/storage.objectCreator"
-                
-                gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-                    --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" \
-                    --role="roles/storage.objectViewer"
-            else
-                print_status "Service account already exists: ${SERVICE_ACCOUNT_NAME}"
-            fi
-            
-            # Create a service account key
-            print_status "Creating service account key..."
-            mkdir -p "$(dirname "$GOOGLE_CREDS_FILE")"
-            gcloud iam service-accounts keys create "$GOOGLE_CREDS_FILE" \
-                --iam-account="${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-            
-            # Set proper permissions for the key file
-            chmod 600 "$GOOGLE_CREDS_FILE"
-            chown ${SERVICE_USER}:${SERVICE_USER} "$GOOGLE_CREDS_FILE"
-        fi
-    fi
     
     # Run the installation
     print_status "Running installation script..."

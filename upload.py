@@ -2,7 +2,6 @@ from datetime import datetime
 import os
 
 import cv2
-from google.cloud import storage
 from numpy import ndarray
 import json
 import sys
