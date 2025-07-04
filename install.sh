@@ -43,6 +43,32 @@ CURRENT_DIR=$(pwd)
 
 print_status "Starting Device Manager installation for Raspberry Pi 5..."
 
+# Get APN configuration from user
+print_status "Cellular Modem Configuration"
+echo "=============================="
+echo
+echo "Please configure your cellular modem settings:"
+echo "The APN (Access Point Name) is provided by your cellular carrier."
+echo "Common APNs:"
+echo "  - net.hotm (Hologram)"
+echo "  - iot.1nce.net (1NCE)"
+echo "  - internet (Generic/T-Mobile)"
+echo "  - broadband (Verizon)"
+echo "  - fast.t-mobile.com (T-Mobile)"
+echo
+read -p "Enter your APN [default: net.hotm]: " USER_APN
+USER_APN=${USER_APN:-net.hotm}
+print_status "Using APN: ${USER_APN}"
+echo
+
+# Ask if user wants to set up cellular connection now or later
+echo "When would you like to configure the cellular connection?"
+echo "1. Now (during installation)"
+echo "2. Later (manually after installation)"
+echo
+read -p "Select option (1-2) [default: 1]: " CELLULAR_SETUP_OPTION
+CELLULAR_SETUP_OPTION=${CELLULAR_SETUP_OPTION:-1}
+
 # Create user if doesn't exist and add to required groups
 if ! id "${SERVICE_USER}" &>/dev/null; then
     print_status "Creating ${SERVICE_USER} user..."
@@ -211,6 +237,33 @@ if [ -f "config.ini" ]; then
     print_status "Copied config.ini"
 fi
 
+# Create or update config.ini with APN setting
+print_status "Configuring APN in config file..."
+if [ -f "${DEVICE_DIR}/config.ini" ]; then
+    # Update existing config.ini with APN
+    if grep -q "\[cellular\]" "${DEVICE_DIR}/config.ini"; then
+        # Update existing cellular section
+        sed -i "/\[cellular\]/,/\[.*\]/ s/^apn=.*/apn=${USER_APN}/" "${DEVICE_DIR}/config.ini"
+        if ! grep -q "^apn=" "${DEVICE_DIR}/config.ini"; then
+            # Add APN line if it doesn't exist
+            sed -i "/\[cellular\]/a apn=${USER_APN}" "${DEVICE_DIR}/config.ini"
+        fi
+    else
+        # Add cellular section
+        echo "" >> "${DEVICE_DIR}/config.ini"
+        echo "[cellular]" >> "${DEVICE_DIR}/config.ini"
+        echo "apn=${USER_APN}" >> "${DEVICE_DIR}/config.ini"
+    fi
+else
+    # Create new config.ini with APN
+    cat > "${DEVICE_DIR}/config.ini" << EOF
+[cellular]
+apn=${USER_APN}
+EOF
+fi
+chown ${SERVICE_USER}:${SERVICE_USER} "${DEVICE_DIR}/config.ini"
+print_status "APN configured: ${USER_APN}"
+
 # Create requirements file optimized for Pi 5
 print_status "Creating Pi 5 optimized requirements.txt..."
 cat > "${DEVICE_DIR}/requirements.txt" << EOF
@@ -257,28 +310,28 @@ cat > /etc/udev/rules.d/99-usb-no-suspend.rules << EOF
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1e0e", ATTRS{idProduct}=="9001", ATTR{power/autosuspend}="-1"
 EOF
 
-# Create cellular modem setup script
-cat > "${SCRIPTS_DIR}/setup_cellular.sh" << 'EOF'
+# Create cellular modem setup script with user's APN
+cat > "${SCRIPTS_DIR}/setup_cellular.sh" << EOF
 #!/bin/bash
 
 # Cellular modem setup script
 print_status() {
-    echo -e "\033[0;32m[INFO]\033[0m $1"
+    echo -e "\033[0;32m[INFO]\033[0m \$1"
 }
 
 print_warning() {
-    echo -e "\033[1;33m[WARN]\033[0m $1"
+    echo -e "\033[1;33m[WARN]\033[0m \$1"
 }
 
 print_error() {
-    echo -e "\033[0;31m[ERROR]\033[0m $1"
+    echo -e "\033[0;31m[ERROR]\033[0m \$1"
 }
 
 setup_cellular_connection() {
-    local apn="$1"
+    local apn="\$1"
     local connection_name="cellular"
     
-    print_status "Setting up cellular connection with APN: $apn"
+    print_status "Setting up cellular connection with APN: \$apn"
     
     # Check if modem is detected
     if ! mmcli -L | grep -q "modem"; then
@@ -289,25 +342,25 @@ setup_cellular_connection() {
     fi
     
     # Check if connection already exists
-    if nmcli connection show | grep -q "$connection_name"; then
-        print_warning "Connection '$connection_name' already exists, removing..."
-        nmcli connection delete "$connection_name"
+    if nmcli connection show | grep -q "\$connection_name"; then
+        print_warning "Connection '\$connection_name' already exists, removing..."
+        nmcli connection delete "\$connection_name"
     fi
     
     # Create new cellular connection
     print_status "Creating cellular connection..."
-    if nmcli connection add type gsm ifname cdc-wdm0 con-name "$connection_name" apn "$apn"; then
+    if nmcli connection add type gsm ifname cdc-wdm0 con-name "\$connection_name" apn "\$apn"; then
         print_status "Cellular connection created successfully"
         
         # Set auto-connect and priority
-        nmcli connection modify "$connection_name" connection.autoconnect yes
-        nmcli connection modify "$connection_name" connection.autoconnect-priority 100
-        nmcli connection modify "$connection_name" connection.autoconnect-retries 0
-        nmcli connection modify "$connection_name" ipv4.dhcp-timeout 60
+        nmcli connection modify "\$connection_name" connection.autoconnect yes
+        nmcli connection modify "\$connection_name" connection.autoconnect-priority 100
+        nmcli connection modify "\$connection_name" connection.autoconnect-retries 0
+        nmcli connection modify "\$connection_name" ipv4.dhcp-timeout 60
         
         # Try to bring up the connection
         print_status "Activating cellular connection..."
-        if nmcli connection up "$connection_name"; then
+        if nmcli connection up "\$connection_name"; then
             print_status "Cellular connection activated successfully"
             
             # Wait a moment for IP assignment
@@ -333,11 +386,11 @@ setup_cellular_connection() {
     fi
 }
 
-# Default APN (can be overridden)
-APN="${1:-net.hotm}"
+# Use configured APN or override from command line
+APN="\${1:-${USER_APN}}"
 
 print_status "Starting cellular modem setup..."
-print_status "Using APN: $APN"
+print_status "Using APN: \$APN"
 
 # Wait for modem to be ready
 print_status "Waiting for modem to be detected..."
@@ -346,7 +399,7 @@ for i in {1..30}; do
         print_status "Modem detected!"
         break
     fi
-    if [ $i -eq 30 ]; then
+    if [ \$i -eq 30 ]; then
         print_error "Timeout waiting for modem detection"
         exit 1
     fi
@@ -358,7 +411,7 @@ print_status "Checking modem status..."
 mmcli -m 0
 
 # Setup cellular connection
-setup_cellular_connection "$APN"
+setup_cellular_connection "\$APN"
 
 print_status "Cellular setup complete!"
 EOF
@@ -442,7 +495,7 @@ chmod 644 /var/log/cellular_monitor.log
 
 # Create the ProScout startup script with USB device checking and cellular setup
 print_status "Creating ProScout startup script with device verification and cellular setup..."
-cat > "${DEVICE_DIR}/proscout_startup.sh" << 'EOF'
+cat > "${DEVICE_DIR}/proscout_startup.sh" << EOF
 #!/bin/bash
 
 # Function to check if required USB modem devices are present
@@ -527,10 +580,10 @@ initialize_gps() {
     mmcli -m 0 --location-enable-gps-raw
     mmcli -m 0 --location-set-gps-refresh-rate=2
     echo "Verifying GPS status..."
-    gps_status=$(sudo mmcli -m 0 --location-status)
-    echo "GPS Status: $gps_status"
+    gps_status=\$(sudo mmcli -m 0 --location-status)
+    echo "GPS Status: \$gps_status"
         
-    if echo "$gps_status" | grep -q "gps-nmea" && echo "$gps_status" | grep -q "gps-raw"; then
+    if echo "\$gps_status" | grep -q "gps-nmea" && echo "\$gps_status" | grep -q "gps-raw"; then
         echo "GPS verification: SUCCESS"
         
         # Try to get initial GPS data
@@ -552,16 +605,16 @@ sleep 10
 
 # Check devices and initialize GPS
 check_usb_modem_devices
-device_check_result=$?
+device_check_result=\$?
 
-if [ $device_check_result -eq 0 ]; then
+if [ \$device_check_result -eq 0 ]; then
     # Setup cellular connectivity first
     setup_cellular_if_needed
     
     # Then initialize GPS
     initialize_gps
-    gps_status=$?
-    if [ $gps_status -eq 0 ]; then
+    gps_status=\$?
+    if [ \$gps_status -eq 0 ]; then
         echo "GPS initialization completed successfully"
     else
         echo "GPS initialization failed, but continuing with main application"
@@ -617,7 +670,7 @@ touch "${LOGS_DIR}/device-manager.error.log"
 chown ${SERVICE_USER}:${SERVICE_USER} "${LOGS_DIR}/device-manager.log"
 chown ${SERVICE_USER}:${SERVICE_USER} "${LOGS_DIR}/device-manager.error.log"
 
-# Create management script
+# Create management script with updated APN option
 print_status "Creating management script..."
 cat > "${SCRIPTS_DIR}/manage.sh" << EOF
 #!/bin/bash
@@ -679,7 +732,7 @@ case "\$1" in
         ls -la /etc/udev/rules.d/99-*permissions.rules 2>/dev/null || echo "No custom permission rules found"
         ;;
     setup-cellular)
-        APN="\${2:-net.hotm}"
+        APN="\${2:-${USER_APN}}"
         echo "Setting up cellular with APN: \$APN"
         /home/proscout/ProScout-master/scripts/setup_cellular.sh "\$APN"
         ;;
@@ -695,3 +748,101 @@ case "\$1" in
         echo "Cleaning up duplicate bearers:"
         mmcli -m 0 2>/dev/null | grep -o "/org/freedesktop/ModemManager1/Bearer/[0-9]*" | while read bearer_path; do
             bearer_num=\$(echo "\$bearer_path" | grep -o "[0-9]*\$")
+            echo "Found bearer: \$bearer_num"
+            if ! mmcli -b "\$bearer_num" 2>/dev/null | grep -q "connected: yes"; then
+                echo "Removing disconnected bearer \$bearer_num"
+                mmcli -m 0 --delete-bearer="\$bearer_num" 2>/dev/null
+            fi
+        done
+        ;;
+    *)
+        echo "Usage: \$0 {start|stop|restart|status|logs|errors|check-devices|check-permissions|setup-cellular [APN]|test-cellular|monitor-cellular|cleanup-bearers}"
+        echo ""
+        echo "Configured APN: ${USER_APN}"
+        echo ""
+        echo "Examples:"
+        echo "  \$0 setup-cellular internet          # Setup with different APN"
+        echo "  \$0 setup-cellular                   # Setup with configured APN (${USER_APN})"
+        exit 1
+        ;;
+esac
+EOF
+
+chmod +x "${SCRIPTS_DIR}/manage.sh"
+chown ${SERVICE_USER}:${SERVICE_USER} "${SCRIPTS_DIR}/manage.sh"
+
+# Set proper ownership for all files
+chown -R ${SERVICE_USER}:${SERVICE_USER} "${INSTALL_DIR}"
+
+# Enable and reload systemd service
+print_status "Enabling systemd service..."
+systemctl daemon-reload
+systemctl enable ${SOFTWARE_NAME}
+
+# Setup cellular connection now if user chose option 1
+if [ "$CELLULAR_SETUP_OPTION" -eq 1 ]; then
+    print_status "Setting up cellular connection..."
+    echo "Waiting for system services to be ready..."
+    sleep 5
+    
+    # Check if modem is detected
+    print_status "Checking for cellular modem..."
+    if lsusb | grep -i sim >/dev/null 2>&1; then
+        print_status "SIM modem detected, proceeding with cellular setup..."
+        
+        # Give ModemManager time to detect the modem
+        print_status "Waiting for ModemManager to detect modem..."
+        sleep 10
+        
+        # Run cellular setup
+        if sudo -u ${SERVICE_USER} "${SCRIPTS_DIR}/setup_cellular.sh" "${USER_APN}"; then
+            print_status "Cellular connection configured successfully!"
+        else
+            print_warning "Cellular setup failed. You can run it manually later with:"
+            print_warning "  ${SCRIPTS_DIR}/manage.sh setup-cellular"
+        fi
+    else
+        print_warning "No SIM modem detected. Cellular setup skipped."
+        print_warning "Connect your cellular modem and run: ${SCRIPTS_DIR}/manage.sh setup-cellular"
+    fi
+else
+    print_status "Cellular setup postponed. To configure later, run:"
+    print_status "  ${SCRIPTS_DIR}/manage.sh setup-cellular"
+fi
+
+print_status "Installation completed successfully!"
+echo
+echo "=== Installation Summary ==="
+echo "Software installed to: ${INSTALL_DIR}"
+echo "Service name: ${SOFTWARE_NAME}"
+echo "Service user: ${SERVICE_USER}"
+echo "Configured APN: ${USER_APN}"
+echo "Device UUID: $(cat ${DEVICE_DIR}/device_id.txt)"
+echo
+echo "=== Service Management ==="
+echo "Start service:    sudo systemctl start ${SOFTWARE_NAME}"
+echo "Stop service:     sudo systemctl stop ${SOFTWARE_NAME}"
+echo "Check status:     sudo systemctl status ${SOFTWARE_NAME}"
+echo "View logs:        ${SCRIPTS_DIR}/manage.sh logs"
+echo
+echo "=== Management Script ==="
+echo "Location: ${SCRIPTS_DIR}/manage.sh"
+echo "Usage examples:"
+echo "  ${SCRIPTS_DIR}/manage.sh start"
+echo "  ${SCRIPTS_DIR}/manage.sh status"
+echo "  ${SCRIPTS_DIR}/manage.sh logs"
+echo "  ${SCRIPTS_DIR}/manage.sh check-devices"
+echo "  ${SCRIPTS_DIR}/manage.sh setup-cellular [APN]"
+echo
+echo "=== Next Steps ==="
+echo "1. Connect your cellular modem (if not already connected)"
+echo "2. Start the service: sudo systemctl start ${SOFTWARE_NAME}"
+echo "3. Check status: ${SCRIPTS_DIR}/manage.sh status"
+echo "4. Monitor logs: ${SCRIPTS_DIR}/manage.sh logs"
+echo
+if [ "$CELLULAR_SETUP_OPTION" -ne 1 ]; then
+    echo "5. Setup cellular: ${SCRIPTS_DIR}/manage.sh setup-cellular"
+    echo
+fi
+
+print_status "Installation script completed!"
