@@ -50,6 +50,7 @@ class Session:
         self.running = False
         self.start_time = None
         self.interval = sleep_interval
+        self.camera_interval = sleep_interval//5 #this is the floor of the interval of snapping an image.
         self.camera_index = camera_index
         self.camera = None
         self.thread = None
@@ -61,7 +62,7 @@ class Session:
     def run(self):
         """The main loop of the session"""
         print("in session running.....")
- 
+        should_i_snap_image = 0
     
         while self.running:
         
@@ -71,8 +72,11 @@ class Session:
         
                 print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
                 image = None
-                if camera_connected:
+                if camera_connected and should_i_snap_image == self.camera_interval:
                     image = self.camera.snap_as_base64()
+                    should_i_snap_image = 0
+                elif camera_connected:
+                    should_i_snap_image +=1
  
                 flow_counter = 0
                 if flow_meter_connected:
