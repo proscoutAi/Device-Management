@@ -8,8 +8,16 @@ from concurrent.futures import ThreadPoolExecutor
 from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter
 import configparser
 import os
-from gps_manager import get_coordinates
+from gps_manager import get_gps_data
+from IMU_manager import IMUManager
 import sys
+import gc
+import socket
+
+# Force Python to use IPv4 only (disable IPv6)
+socket.getaddrinfo = lambda host, port, family=0, type=0, proto=0, flags=0: \
+    socket.getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
@@ -26,6 +34,8 @@ production = config.getboolean('Setup', 'production')
 url_key = 'cloud_function_url_prod' if production else 'cloud_function_url_stg'
 cloud_function_url = config.get('Setup', url_key)
 print(f"working cloud url is:{cloud_function_url}")
+batch_size = config.getint('Setup', 'batch_size')
+imu_rate_per_second = config.getint('Setup', 'imu_rate_per_second')
 
 executor = ThreadPoolExecutor(max_workers=5)
 
@@ -56,8 +66,29 @@ class Session:
         self.thread = None
         self.upload_threads = []
         self.upload_class = CloudFunctionClient(cloud_function_url,client_device_id,sleep_interval)
-    
+        self.batch_payload = []
+        self.imu_manager = None
         
+    
+    def flash_batch(self):
+        executor.submit(self.upload_class.upload_json, self.batch_payload)
+        self.batch_payload = []
+    
+    def add_payload_to_batch(self,snap_time, flow_counter, gps_data,imu_data, image):
+        self.batch_payload.append({
+                        "timestamp": snap_time.isoformat(),
+                        "flow_meter_counter": flow_counter,
+                        "latitude":gps_data['latitude'],
+                        "longitude": gps_data['longitude'],
+                        "speed_kmh":gps_data['speed_kmh'],
+                        "heading":gps_data['course'],
+                        "IMU": imu_data.copy(),
+                        "image_base_64":image})
+        
+        
+        if len(self.batch_payload)==batch_size:
+            self.flash_batch()
+            gc.collect()
 
     def run(self):
         """The main loop of the session"""
@@ -66,9 +97,9 @@ class Session:
     
         while self.running:
         
-            gps_data = get_coordinates()
+            gps_data = get_gps_data()
         
-            if gps_data is not None:
+            if gps_data['fix_status']=='Valid Fix':
         
                 print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
                 image = None
@@ -81,12 +112,15 @@ class Session:
                 flow_counter = 0
                 if flow_meter_connected:
                     flow_counter = get_counter_and_reset()
+                    
+                imu_data = self.imu_manager.get_imu_buffer_and_reset()
                 
                 snap_time = datetime.now()
-           
-                # Submit the task and store the future
-                executor.submit(self.upload_class.upload_json, snap_time, flow_counter, gps_data, image)
-    
+                
+                self.add_payload_to_batch(snap_time, flow_counter, gps_data,imu_data, image)
+                
+            else:
+                print("gps has no fix")
             
             sleep(self.interval)
         
@@ -106,6 +140,9 @@ class Session:
         if flow_meter_connected:
           setup_flow_meter()
 
+        # initiate IMU
+        # Create global instance
+        self.imu_manager = IMUManager(imu_rate_per_second)
  
         self.start_time = datetime.now()
         

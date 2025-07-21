@@ -1,232 +1,209 @@
+import re
 import time
 from datetime import datetime
 import sys
-import dbus
+import serial
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
+
+
 class GPSManager:
-    def __init__(self):
-
-        self.bus = None
-        self.location_interface = None
-        self._connect()
+    def __init__(self, port='/dev/ttyGSM1', baudrate=115200):
+      try:
+        # Open serial connection to GSM multiplexer
+        self.ser = serial.Serial(port, baudrate, timeout=2)
+        # AT commands to request NMEA data
+        self.at_command = [
+            'AT+UGRMC?\r\n',
+            'AT+UGGGA?\r\n', 
+            'AT+UGGLL?\r\n',
+            'AT+UGGSV?\r\n'
+        ]
+        self.gps_data = {
+            'fix_status': 'No Fix',
+            'latitude': 0.0,
+            'longitude': 0.0,
+            'altitude': 0.0,
+            'speed_knots': 0.0,
+            'speed_kmh': 0.0,
+            'course': 0.0,
+            'satellites_used': 0,
+            'satellites_view': 0,
+            'hdop': 0.0,
+            'time_utc': 'N/A',
+            'date': 'N/A',
+            'last_update': 'N/A'
+        }
+      except Exception as e:
+            print(f"Failed to connect to {port}: {e}")
+            return None
     
-    def _connect(self):
-        """Establish D-Bus connections"""
+    
+    def send_at_command(self, command):
+        """Send AT command and return response"""
+        if not self.ser:
+            return None
+            
         try:
-            self.bus = dbus.SystemBus()
-            mm = dbus.Interface(
-                self.bus.get_object('org.freedesktop.ModemManager1', '/org/freedesktop/ModemManager1'),
-                'org.freedesktop.DBus.ObjectManager')
-            modems = mm.GetManagedObjects()
+            self.ser.flushInput()
+            self.ser.write(f"{command}\r\n".encode())
             
+            response = ""
+            start_time = time.time()
             
-            # Find the first modem and connect to its location interface
-            for modem_path in modems:
-                print(modem_path)
-                if 'org.freedesktop.ModemManager1.Modem' in modems[modem_path]:
-                    modem = self.bus.get_object('org.freedesktop.ModemManager1', modem_path)
-                    self.location_interface = dbus.Interface(
-                        modem, 'org.freedesktop.ModemManager1.Modem.Location')
-                    print(f"GPS Manager: Connected to modem {modem_path} (2s updates)")
-                    return True
+            while time.time() - start_time < 3:
+                if self.ser.in_waiting > 0:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        response += line + "\n"
+                        if line == "OK" or line.startswith("ERROR"):
+                            break
+                time.sleep(0.01)
             
-            print("GPS Manager: No modems found")
-            return False
-            
+            return response
         except Exception as e:
-            print(f"GPS Manager: Failed to connect to D-Bus: {e}")
-            return False
+            return None
+        
+    def extract_nmea(self, at_response):
+        """Extract NMEA sentence from AT response"""
+        if not at_response:
+            return None
+        
+        nmea_pattern = r'\$G[PN][A-Z]{3},[^*]*\*[A-F0-9]{2}'
+        match = re.search(nmea_pattern, at_response)
+        return match.group(0) if match else None
     
-    def get_coordinates(self):
+    def parse_rmc(self, nmea_sentence):
+        """Parse RMC sentence"""
+        try:
+            parts = nmea_sentence.split(',')
+            if len(parts) >= 12:
+                # Time
+                time_str = parts[1]
+                if len(time_str) >= 6:
+                    self.gps_data['time_utc'] = f"{time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}"
+                
+                # Status
+                status = parts[2]
+                self.gps_data['fix_status'] = 'Valid Fix' if status == 'A' else 'No Fix'
+                
+                # Position
+                if status == 'A':
+                    lat_str = parts[3]
+                    lat_dir = parts[4]
+                    lon_str = parts[5]
+                    lon_dir = parts[6]
+                    
+                    if lat_str and lon_str:
+                        # Convert DDMM.MMMM to decimal degrees
+                        lat_deg = float(lat_str[:2]) + float(lat_str[2:]) / 60
+                        if lat_dir == 'S':
+                            lat_deg = -lat_deg
+                        
+                        lon_deg = float(lon_str[:3]) + float(lon_str[3:]) / 60
+                        if lon_dir == 'W':
+                            lon_deg = -lon_deg
+                        
+                        self.gps_data['latitude'] = lat_deg
+                        self.gps_data['longitude'] = lon_deg
+                
+                # Speed
+                speed_str = parts[7]
+                if speed_str:
+                    self.gps_data['speed_knots'] = float(speed_str)
+                    self.gps_data['speed_kmh'] = float(speed_str) * 1.852
+                
+                # Course
+                course_str = parts[8]
+                if course_str:
+                    self.gps_data['course'] = float(course_str)
+                
+                # Date
+                date_str = parts[9]
+                if len(date_str) >= 6:
+                    self.gps_data['date'] = f"{date_str[:2]}/{date_str[2:4]}/{date_str[4:6]}"
+                
+        except Exception as e:
+            pass
 
-        if not self.location_interface:
-            if not self._connect():
-                return None
+    def parse_gga(self, nmea_sentence):
+        """Parse GGA sentence"""
+        try:
+            parts = nmea_sentence.split(',')
+            if len(parts) >= 15:
+                # Satellites used
+                sats_str = parts[7]
+                if sats_str:
+                    self.gps_data['satellites_used'] = int(sats_str)
+                
+                # HDOP
+                hdop_str = parts[8]
+                if hdop_str:
+                    self.gps_data['hdop'] = float(hdop_str)
+                
+                # Altitude
+                alt_str = parts[9]
+                if alt_str:
+                    self.gps_data['altitude'] = float(alt_str)
+                    
+        except Exception as e:
+            pass
+    
+    def parse_gsv(self, nmea_sentence):
+        """Parse GSV sentence"""
+        try:
+            parts = nmea_sentence.split(',')
+            if len(parts) >= 4:
+                # Satellites in view
+                sats_str = parts[3]
+                if sats_str:
+                    self.gps_data['satellites_view'] = int(sats_str)
+                    
+        except Exception as e:
+            pass
+    
+    
+    def update_gps_data(self):
+        """Update GPS data from device"""
+        commands = [
+            ('AT+UGRMC?', self.parse_rmc),
+            ('AT+UGGGA?', self.parse_gga),
+            ('AT+UGGSV?', self.parse_gsv)
+        ]
         
         try:
-            # Fast location read - GPS updates every 2 seconds automatically
-            location_data = self.location_interface.GetLocation()
+            for command, parser in commands:
+                response = self.send_at_command(command)
+                if response:
+                    nmea_sentence = self.extract_nmea(response)
+                    if nmea_sentence:
+                        parser(nmea_sentence)
             
-            if not location_data:
-                return None
-            
-            # Initialize GPS data structure
-            gps_data = {
-                'latitude': None,
-                'longitude': None,
-                'altitude': None,
-                'timestamp': time.time(),
-                'speed_kmh': None,
-                'heading': None,
-                'fix_quality': None,
-                'satellites': None,
-                'gps_timestamp': None
-            }
-            
-            # Extract coordinates from key 2 (fastest method)
-            if 2 in location_data and isinstance(location_data[2], dict):
-                coord_data = location_data[2]
-                if 'latitude' in coord_data and 'longitude' in coord_data:
-                    gps_data['latitude'] = float(coord_data['latitude'])
-                    gps_data['longitude'] = float(coord_data['longitude'])
-                    if 'altitude' in coord_data:
-                        gps_data['altitude'] = float(coord_data['altitude'])
-                    if 'utc-time' in coord_data:
-                        gps_data['gps_timestamp'] = str(coord_data['utc-time'])
-                    
-                    # Extract additional data from NMEA if available
-                    if 4 in location_data:
-                        nmea_data = str(location_data[4])
-                        extra_data = self._parse_nmea_extras(nmea_data)
-                        gps_data.update(extra_data)
-                    
-                    return gps_data
-            
-            # Fallback: parse NMEA data if key 2 not available
-            if 4 in location_data:
-                nmea_data = str(location_data[4])
-                coords = self._parse_nmea_coordinates(nmea_data)
-                if coords:
-                    gps_data.update(coords)
-                    extra_data = self._parse_nmea_extras(nmea_data)
-                    gps_data.update(extra_data)
-                    return gps_data
-            
-            return None
+            self.gps_data['last_update'] = datetime.now().strftime('%H:%M:%S')
             
         except Exception as e:
             print(f"GPS Manager: Error getting coordinates: {e}")
-            # Try to reconnect for next call
-            self._connect()
-            return None
-    
-    def get_gps_age_seconds(self):
-        """Get age of GPS data in seconds"""
-        try:
-            location_data = self.location_interface.GetLocation()
-            if not location_data or 2 not in location_data:
-                return None
-            
-            coord_data = location_data[2]
-            if not isinstance(coord_data, dict) or 'utc-time' not in coord_data:
-                return 0  # If no timestamp, assume current
-            
-            utc_time_str = str(coord_data['utc-time'])
-            utc_hours = int(utc_time_str[:2])
-            utc_minutes = int(utc_time_str[2:4])
-            utc_seconds = float(utc_time_str[4:])
-            
-            import datetime as dt
-            now_utc = dt.datetime.utcnow()
-            gps_utc = now_utc.replace(hour=utc_hours, minute=utc_minutes, 
-                                    second=int(utc_seconds), microsecond=0)
-            
-            return abs((now_utc - gps_utc).total_seconds())
-            
-        except Exception as e:
-            print(f"GPS Manager: Error checking GPS age: {e}")
-            return None
-    
-    def _parse_nmea_extras(self, nmea_data):
-        """Parse speed, heading, satellites from NMEA data"""
-        data = {}
-        
-        for line in nmea_data.split('\n'):
-            line = line.strip()
-            
-            # Parse speed and heading from GPRMC
-            if line.startswith('$GPRMC') or line.startswith('$GNRMC'):
-                parts = line.split(',')
-                if len(parts) >= 9:
-                    try:
-                        if parts[7]:  # Speed in knots
-                            speed_knots = float(parts[7])
-                            data['speed_kmh'] = speed_knots * 1.852
-                        if parts[8]:  # Course over ground
-                            data['heading'] = float(parts[8])
-                    except (ValueError, IndexError):
-                        pass
-            
-            # Parse altitude, fix quality, satellites from GPGGA
-            elif line.startswith('$GPGGA') or line.startswith('$GNGGA'):
-                parts = line.split(',')
-                if len(parts) >= 10:
-                    try:
-                        if parts[9]:  # Altitude
-                            data['altitude'] = float(parts[9])
-                        if parts[6]:  # Fix quality
-                            data['fix_quality'] = int(parts[6])
-                        if parts[7]:  # Number of satellites
-                            data['satellites'] = int(parts[7])
-                    except (ValueError, IndexError):
-                        pass
-        
-        return data
-    
-    def _parse_nmea_coordinates(self, nmea_data):
-        """Parse coordinates from NMEA data (fallback method)"""
-        coords = {}
-        
-        for line in nmea_data.split('\n'):
-            line = line.strip()
-            
-            # Parse GNGNS sentence
-            if line.startswith('$GNGNS'):
-                parts = line.split(',')
-                if len(parts) >= 6:
-                    try:
-                        if parts[2] and parts[3]:
-                            lat_raw = float(parts[2])
-                            lat_deg = int(lat_raw / 100)
-                            lat_min = lat_raw % 100
-                            coords['latitude'] = lat_deg + lat_min / 60
-                            if parts[3] == 'S':
-                                coords['latitude'] = -coords['latitude']
-                        
-                        if parts[4] and parts[5]:
-                            lon_raw = float(parts[4])
-                            lon_deg = int(lon_raw / 100)
-                            lon_min = lon_raw % 100
-                            coords['longitude'] = lon_deg + lon_min / 60
-                            if parts[5] == 'W':
-                                coords['longitude'] = -coords['longitude']
-                                
-                    except (ValueError, IndexError):
-                        continue
-        
-        return coords
 
-# Global GPS manager instance (singleton)
+    
+    
+    def get_gps_data(self):
+        """Get current GPS data"""
+        try:
+            self.update_gps_data()  # Remove the redundant send_at_command() call
+            return self.gps_data
+        except Exception as e:
+            print(f"GPS Manager: Error getting coordinates: {e}")
+            return self.gps_data
+
+
 gps_manager = GPSManager()
 
-def get_coordinates():
-    """Get current GPS coordinates - fresh every 2 seconds"""
-    return gps_manager.get_coordinates()
-
-def get_gps_age():
-    """Get age of GPS data in seconds (should be 0-2 seconds)"""
-    return gps_manager.get_gps_age_seconds()
-
-def get_detailed_gps_info():
-    """Get comprehensive GPS information for sprayer logging"""
-    data = get_coordinates()
-    
-    if data:
-        gps_age = get_gps_age()
-        print(f"GPS Location Data (2s updates):")
-        print(f"  Latitude: {data['latitude']:.6f}°")
-        print(f"  Longitude: {data['longitude']:.6f}°")
-        print(f"  Altitude: {data['altitude']:.1f}m" if data['altitude'] else "  Altitude: N/A")
-        print(f"  Speed: {data['speed_kmh']:.1f} km/h" if data['speed_kmh'] else "  Speed: N/A")
-        print(f"  Heading: {data['heading']:.1f}°" if data['heading'] else "  Heading: N/A")
-        print(f"  Satellites: {data['satellites']}" if data['satellites'] else "  Satellites: N/A")
-        print(f"  GPS Age: {gps_age:.0f}s" if gps_age else "  GPS Age: N/A")
-        print(f"  Timestamp: {datetime.fromtimestamp(data['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"lat:{data['latitude']} lon:{data['longitude']}")
+def get_gps_data():
+    global gps_manager
+    if gps_manager is not None:
+        return gps_manager.get_gps_data()
     else:
-        print("No GPS data available")
-    
-    return data
+        print("GPS is not connected retrying")
+        gps_manager = GPSManager()

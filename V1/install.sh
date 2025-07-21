@@ -3,6 +3,7 @@
 # Complete installation script for Device Management software
 # For Raspberry Pi 5 - Updated with Pi 5 optimizations and cellular modem setup
 # FIXED VERSION - Corrected modem detection logic and improved error handling
+# UPDATED VERSION - Added NetworkManager permissions and mobile broadband database
 
 # Define colors for output
 RED='\033[0;31m'
@@ -79,9 +80,9 @@ else
     print_status "User ${SERVICE_USER} already exists."
 fi
 
-# Make sure the user is in the required groups for GPIO, camera, and device access
+# FIXED: Make sure the user is in the required groups including netdev for NetworkManager
 print_status "Adding user to required groups..."
-usermod -aG video,dialout,gpio,i2c,spi,tty "${SERVICE_USER}"
+usermod -aG video,dialout,gpio,i2c,spi,tty,netdev "${SERVICE_USER}"
 
 # Update package lists first
 print_status "Updating package lists..."
@@ -95,12 +96,12 @@ apt install -y build-essential pkg-config cmake
 print_status "Installing D-Bus development libraries..."
 apt install -y libdbus-1-dev libdbus-glib-1-dev dbus python3-dbus
 
-# Install system dependencies - Pi 5 optimized with additional modem support
+# FIXED: Install system dependencies - Pi 5 optimized with additional modem support and mobile broadband database
 print_status "Installing system dependencies for Pi 5..."
 apt install -y python3-pip python3-venv python3-dev python3-opencv git curl unzip uuid-runtime \
     python3-gpiozero python3-lgpio lgpio python3-libgpiod gpiod i2c-tools \
     libqmi-utils libmbim-utils policykit-1 python3-gi python3-gi-dev \
-    usb-modeswitch usb-modeswitch-data minicom
+    usb-modeswitch usb-modeswitch-data minicom mobile-broadband-provider-info
 
 # Install ModemManager and NetworkManager with proper dependencies
 print_status "Installing cellular modem support..."
@@ -133,8 +134,8 @@ udevadm control --reload-rules
 udevadm trigger
 print_status "GPIO permissions configured for Pi 5"
 
-# Set up PolicyKit permissions for ModemManager
-print_status "Setting up PolicyKit permissions for ModemManager..."
+# FIXED: Set up PolicyKit permissions for ModemManager AND NetworkManager
+print_status "Setting up PolicyKit permissions for ModemManager and NetworkManager..."
 
 # Create PolicyKit rule for ModemManager access
 cat > /etc/polkit-1/localauthority/50-local.d/modemmanager.pkla << EOF
@@ -158,11 +159,63 @@ Action=org.freedesktop.ModemManager1.Location.*
 ResultAny=yes
 ResultInactive=yes
 ResultActive=yes
+
+[Allow ModemManager Messaging for proscout user]
+Identity=unix-user:${SERVICE_USER}
+Action=org.freedesktop.ModemManager1.Messaging.*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
 EOF
 
-# Set correct permissions for PolicyKit file
+# FIXED: Create PolicyKit rule for NetworkManager access (THIS WAS MISSING!)
+cat > /etc/polkit-1/localauthority/50-local.d/networkmanager.pkla << EOF
+[Allow NetworkManager for proscout user]
+Identity=unix-user:${SERVICE_USER}
+Action=org.freedesktop.NetworkManager.*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+
+[Allow NetworkManager Connection Control for proscout user]
+Identity=unix-user:${SERVICE_USER}
+Action=org.freedesktop.NetworkManager.settings.*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+
+[Allow NetworkManager Device Control for proscout user]
+Identity=unix-user:${SERVICE_USER}
+Action=org.freedesktop.NetworkManager.network-control
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+
+[Allow NetworkManager WiFi Control for proscout user]
+Identity=unix-user:${SERVICE_USER}
+Action=org.freedesktop.NetworkManager.wifi.*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF
+
+# Set correct permissions for PolicyKit files
 chmod 644 /etc/polkit-1/localauthority/50-local.d/modemmanager.pkla
-print_status "PolicyKit permissions configured for ModemManager"
+chmod 644 /etc/polkit-1/localauthority/50-local.d/networkmanager.pkla
+
+# FIXED: Create NetworkManager configuration to allow user management (THIS WAS MISSING!)
+mkdir -p /etc/NetworkManager/conf.d
+cat > /etc/NetworkManager/conf.d/10-proscout-permissions.conf << EOF
+[main]
+# Allow proscout user to manage connections
+auth-polkit=true
+
+[keyfile]
+# Allow proscout user to modify connection files
+unmanaged-devices=none
+EOF
+
+print_status "PolicyKit permissions configured for ModemManager and NetworkManager"
 
 # Create comprehensive udev rules for modem access
 print_status "Setting up comprehensive udev rules for modem access..."
@@ -250,12 +303,16 @@ else
     fi
 fi
 
-# Ensure services are enabled and started
+# FIXED: Ensure services are enabled and started (moved earlier to avoid conflicts)
 print_status "Configuring system services..."
 systemctl enable ModemManager
 systemctl enable NetworkManager
 systemctl start ModemManager
 systemctl start NetworkManager
+
+# FIXED: Restart polkit to apply new rules
+print_status "Restarting PolicyKit to apply new permissions..."
+systemctl restart polkit
 
 print_status "Raspberry Pi hardware interfaces configured"
 
@@ -330,8 +387,7 @@ readchar
 requests
 pyserial
 pynmea2
-# Use system dbus-python instead of pip version
-# dbus-python will be handled by system package
+dbus-python
 EOF
 chown ${SERVICE_USER}:${SERVICE_USER} "${DEVICE_DIR}/requirements.txt"
 print_status "Created Pi 5 optimized requirements.txt"
@@ -608,11 +664,11 @@ EOF
 chmod +x "${SCRIPTS_DIR}/detect_modem.sh"
 chown ${SERVICE_USER}:${SERVICE_USER} "${SCRIPTS_DIR}/detect_modem.sh"
 
-# Create enhanced cellular setup script
+# Create enhanced cellular setup script with NetworkManager permission fixes
 cat > "${SCRIPTS_DIR}/setup_cellular.sh" << EOF
 #!/bin/bash
 
-# Enhanced cellular modem setup script with better error handling and FIXED detection
+# Enhanced cellular modem setup script with NetworkManager permission fixes
 
 print_status() {
     echo -e "\033[0;32m[INFO]\033[0m \$1"
@@ -626,11 +682,33 @@ print_error() {
     echo -e "\033[0;31m[ERROR]\033[0m \$1"
 }
 
+# FIXED: Function to test NetworkManager permissions
+test_networkmanager_permissions() {
+    print_status "Testing NetworkManager permissions..."
+    
+    # Test basic NetworkManager access
+    if nmcli general status >/dev/null 2>&1; then
+        print_status "✓ NetworkManager access working"
+    else
+        print_error "✗ NetworkManager access failed"
+        print_error "Run: sudo /home/proscout/ProScout-master/scripts/manage.sh fix-permissions"
+        return 1
+    fi
+    
+    return 0
+}
+
 setup_cellular_connection() {
     local apn="\$1"
     local connection_name="cellular"
     
     print_status "Setting up cellular connection with APN: \$apn"
+    
+    # Test NetworkManager permissions first
+    if ! test_networkmanager_permissions; then
+        print_error "NetworkManager permissions issue detected"
+        return 1
+    fi
     
     # FIXED: Better modem detection check
     print_status "Checking modem status..."
@@ -665,7 +743,7 @@ setup_cellular_connection() {
     
     # Get modem path
     local modem_path=\$(echo "\$modem_output" | grep -o '/org/freedesktop/ModemManager1/Modem/[0-9]*' | head -1)
-    local modem_num=\$(echo "\$modem_path" | grep -o '[0-9]*\$')
+    local modem_num=\$(echo "\$modem_path" | grep -o '[0-9]*\)
     
     print_status "Using modem: \$modem_path (modem \$modem_num)"
     
@@ -675,17 +753,22 @@ setup_cellular_connection() {
         nmcli connection delete "\$connection_name"
     fi
     
-    # Create new cellular connection
+    # FIXED: Create new cellular connection with explicit settings to avoid APN database issues
     print_status "Creating cellular connection..."
-    if nmcli connection add type gsm ifname cdc-wdm0 con-name "\$connection_name" apn "\$apn"; then
-        print_status "Cellular connection created successfully"
+    if nmcli connection add \
+        type gsm \
+        con-name "\$connection_name" \
+        ifname cdc-wdm0 \
+        gsm.apn "\$apn" \
+        gsm.auto-config no \
+        connection.autoconnect yes \
+        connection.autoconnect-priority 50 \
+        connection.autoconnect-retries 0 \
+        ipv4.method auto \
+        ipv4.may-fail no \
+        ipv4.dhcp-timeout 60; then
         
-        # Set connection properties
-        nmcli connection modify "\$connection_name" connection.autoconnect yes
-        nmcli connection modify "\$connection_name" connection.autoconnect-priority 50
-        nmcli connection modify "\$connection_name" connection.autoconnect-retries 0
-        nmcli connection modify "\$connection_name" ipv4.dhcp-timeout 60
-        nmcli connection modify "\$connection_name" gsm.auto-config yes
+        print_status "Cellular connection created successfully"
         
         # Try to bring up the connection
         print_status "Activating cellular connection..."
@@ -696,12 +779,19 @@ setup_cellular_connection() {
             sleep 10
             
             # Check connection status
+            print_status "Connection status:"
             nmcli device status
+            
+            # Show IP information
+            local ip_info=\$(ip addr show cdc-wdm0 2>/dev/null | grep "inet ")
+            if [ -n "\$ip_info" ]; then
+                print_status "IP assigned: \$ip_info"
+            fi
             
             # Test connectivity
             print_status "Testing connectivity..."
             if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
-                print_status "Cellular internet connection working!"
+                print_status "✓ Cellular internet connection working!"
                 return 0
             else
                 print_warning "Connection established but internet test failed"
@@ -710,10 +800,12 @@ setup_cellular_connection() {
             fi
         else
             print_error "Failed to activate cellular connection"
+            print_error "Check NetworkManager logs: journalctl -u NetworkManager -f"
             return 1
         fi
     else
         print_error "Failed to create cellular connection"
+        print_error "This might be due to APN database issues or permissions"
         return 1
     fi
 }
@@ -725,9 +817,18 @@ print_status "Starting cellular modem setup..."
 print_status "Using APN: \$APN"
 
 # Setup cellular connection
-setup_cellular_connection "\$APN"
-
-print_status "Cellular setup complete!"
+if setup_cellular_connection "\$APN"; then
+    print_status "✓ Cellular setup complete!"
+else
+    print_error "✗ Cellular setup failed"
+    print_error ""
+    print_error "Troubleshooting steps:"
+    print_error "1. Check permissions: sudo /home/proscout/ProScout-master/scripts/manage.sh check-permissions"
+    print_error "2. Fix permissions: sudo /home/proscout/ProScout-master/scripts/manage.sh fix-permissions"
+    print_error "3. Check modem: sudo /home/proscout/ProScout-master/scripts/manage.sh detect-modem"
+    print_error "4. Try different APN: sudo /home/proscout/ProScout-master/scripts/manage.sh setup-cellular internet"
+    exit 1
+fi
 EOF
 
 chmod +x "${SCRIPTS_DIR}/setup_cellular.sh"
@@ -1027,7 +1128,7 @@ chown ${SERVICE_USER}:${SERVICE_USER} "${LOGS_DIR}/device-manager.log"
 chown ${SERVICE_USER}:${SERVICE_USER} "${LOGS_DIR}/device-manager.error.log"
 chown ${SERVICE_USER}:${SERVICE_USER} "${LOGS_DIR}/startup.log"
 
-# Create enhanced management script
+# Create enhanced management script with NetworkManager permission fixes
 print_status "Creating enhanced management script..."
 cat > "${SCRIPTS_DIR}/manage.sh" << EOF
 #!/bin/bash
@@ -1083,7 +1184,13 @@ case "\$1" in
         groups ${SERVICE_USER}
         echo ""
         echo "=== PolicyKit Rules ==="
-        ls -la /etc/polkit-1/localauthority/50-local.d/modemmanager.pkla 2>/dev/null || echo "PolicyKit rules not found"
+        echo "ModemManager rules:"
+        ls -la /etc/polkit-1/localauthority/50-local.d/modemmanager.pkla 2>/dev/null || echo "ModemManager rules not found"
+        echo "NetworkManager rules:"
+        ls -la /etc/polkit-1/localauthority/50-local.d/networkmanager.pkla 2>/dev/null || echo "NetworkManager rules not found"
+        echo ""
+        echo "=== NetworkManager Configuration ==="
+        ls -la /etc/NetworkManager/conf.d/10-proscout-permissions.conf 2>/dev/null || echo "NetworkManager config not found"
         echo ""
         echo "=== Device Permissions ==="
         ls -la /dev/ttyUSB* /dev/ttyACM* /dev/cdc-wdm* 2>/dev/null || echo "No serial devices found"
@@ -1092,6 +1199,42 @@ case "\$1" in
         echo "=== Udev Rules ==="
         ls -la /etc/udev/rules.d/99-*permissions.rules /etc/udev/rules.d/99-usb-no-suspend.rules 2>/dev/null || echo "No custom rules found"
         ;;
+    fix-permissions)
+        echo "=== Fixing NetworkManager and ModemManager permissions ==="
+        # Re-add user to netdev group
+        sudo usermod -aG netdev ${SERVICE_USER}
+        echo "Added ${SERVICE_USER} to netdev group"
+        
+        # Restart services
+        echo "Restarting services..."
+        sudo systemctl restart polkit
+        sudo systemctl restart NetworkManager
+        sudo systemctl restart ModemManager
+        
+        # Reload udev rules
+        echo "Reloading udev rules..."
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger
+        
+        echo "Permissions fixed - testing..."
+        sleep 5
+        
+        # Test NetworkManager access
+        if sudo -u ${SERVICE_USER} nmcli general status >/dev/null 2>&1; then
+            echo "✓ NetworkManager access working"
+        else
+            echo "✗ NetworkManager access still not working"
+        fi
+        
+        # Test ModemManager access
+        if sudo -u ${SERVICE_USER} mmcli -L >/dev/null 2>&1; then
+            echo "✓ ModemManager access working"
+        else
+            echo "✗ ModemManager access still not working"
+        fi
+        
+        echo "Fix complete - may need reboot if issues persist"
+        ;;
     detect-modem)
         echo "Running modem detection..."
         \$SCRIPTS_DIR/detect_modem.sh
@@ -1099,15 +1242,16 @@ case "\$1" in
     setup-cellular)
         APN="\${2:-${USER_APN}}"
         echo "Setting up cellular with APN: \$APN"
-        \$SCRIPTS_DIR/setup_cellular.sh "\$APN"
+        sudo -u ${SERVICE_USER} \$SCRIPTS_DIR/setup_cellular.sh "\$APN"
         ;;
     test-cellular)
         echo "Testing cellular connectivity:"
         if nmcli connection show --active | grep -q "gsm"; then
-            echo "Cellular connection is active"
+            echo "✓ Cellular connection is active"
+            echo "Testing internet connectivity..."
             ping -c 4 8.8.8.8
         else
-            echo "No active cellular connection found"
+            echo "✗ No active cellular connection found"
             nmcli connection show | grep cellular || echo "No cellular connection configured"
         fi
         ;;
@@ -1157,14 +1301,18 @@ case "\$1" in
         echo ""
         echo "Network status:"
         nmcli device status
+        echo ""
+        echo "NetworkManager permissions test:"
+        sudo -u ${SERVICE_USER} nmcli general status && echo "✓ NetworkManager OK" || echo "✗ NetworkManager FAILED"
         ;;
     *)
-        echo "Usage: \$0 {start|stop|restart|status|logs|errors|startup-logs|check-devices|check-permissions|detect-modem|setup-cellular [APN]|test-cellular|monitor-cellular|cleanup-bearers|reset-modem|debug}"
+        echo "Usage: \$0 {start|stop|restart|status|logs|errors|startup-logs|check-devices|check-permissions|fix-permissions|detect-modem|setup-cellular [APN]|test-cellular|monitor-cellular|cleanup-bearers|reset-modem|debug}"
         echo ""
         echo "Configured APN: ${USER_APN}"
         echo ""
         echo "Common commands:"
         echo "  \$0 debug                             # Show comprehensive debug info"
+        echo "  \$0 fix-permissions                   # Fix NetworkManager/ModemManager permissions"
         echo "  \$0 detect-modem                     # Detect and initialize modem"
         echo "  \$0 setup-cellular                   # Setup cellular with configured APN"
         echo "  \$0 setup-cellular internet          # Setup with different APN"
@@ -1178,8 +1326,22 @@ EOF
 chmod +x "${SCRIPTS_DIR}/manage.sh"
 chown ${SERVICE_USER}:${SERVICE_USER} "${SCRIPTS_DIR}/manage.sh"
 
+# Create symbolic link for convenience
+ln -sf "${SCRIPTS_DIR}/manage.sh" "${USER_HOME}/manage-device.sh"
+chown ${SERVICE_USER}:${SERVICE_USER} "${USER_HOME}/manage-device.sh"
+
 # Set proper ownership for all files
 chown -R ${SERVICE_USER}:${SERVICE_USER} "${INSTALL_DIR}"
+
+# Setup automatic monitoring
+print_status "Setting up automatic cellular monitoring..."
+# Add cron job for cellular monitoring (every 5 minutes)
+(crontab -l 2>/dev/null; echo "*/5 * * * * ${SCRIPTS_DIR}/monitor_cellular.sh") | crontab -
+
+# Add keep-alive ping (every 2 minutes to prevent idle disconnection)
+(crontab -l 2>/dev/null; echo "*/2 * * * * /bin/ping -c 1 8.8.8.8 >/dev/null 2>&1") | crontab -
+
+print_status "Automatic cellular monitoring configured"
 
 # Enable and reload systemd service
 print_status "Enabling systemd service..."
@@ -1194,10 +1356,19 @@ udevadm trigger
 # Test dbus-python installation
 print_status "Testing dbus-python installation..."
 if sudo -u ${SERVICE_USER} "${VENV_DIR}/bin/python" -c "import dbus; print('dbus-python is working')" 2>/dev/null; then
-    print_status "dbus-python test: SUCCESS"
+    print_status "✓ dbus-python test: SUCCESS"
 else
-    print_error "dbus-python test: FAILED"
+    print_error "✗ dbus-python test: FAILED"
     print_status "You may need to install dbus-python manually after reboot"
+fi
+
+# FIXED: Test NetworkManager permissions
+print_status "Testing NetworkManager permissions..."
+if sudo -u ${SERVICE_USER} nmcli general status >/dev/null 2>&1; then
+    print_status "✓ NetworkManager permissions: SUCCESS"
+else
+    print_error "✗ NetworkManager permissions: FAILED"
+    print_error "This will be fixed on next reboot, or run: ${SCRIPTS_DIR}/manage.sh fix-permissions"
 fi
 
 # FIXED: Setup cellular connection with better error handling
@@ -1212,9 +1383,9 @@ if [ "$CELLULAR_SETUP_OPTION" -eq 1 ]; then
         
         # Run cellular setup
         if sudo -u ${SERVICE_USER} "${SCRIPTS_DIR}/setup_cellular.sh" "${USER_APN}"; then
-            print_status "Cellular connection configured successfully!"
+            print_status "✓ Cellular connection configured successfully!"
         else
-            print_warning "Cellular setup failed. You can run it manually later with:"
+            print_warning "✗ Cellular setup failed. You can run it manually later with:"
             print_warning "  ${SCRIPTS_DIR}/manage.sh setup-cellular"
         fi
     else
@@ -1228,55 +1399,97 @@ fi
 
 print_status "Installation completed successfully!"
 echo
-echo "=== Installation Summary ==="
+echo "========================================="
+echo "         INSTALLATION SUMMARY"
+echo "========================================="
 echo "Software installed to: ${INSTALL_DIR}"
 echo "Service name: ${SOFTWARE_NAME}"
 echo "Service user: ${SERVICE_USER}"
 echo "Configured APN: ${USER_APN}"
 echo "Device UUID: $(cat ${DEVICE_DIR}/device_id.txt)"
 echo
-echo "=== FIXES APPLIED ==="
+echo "========================================="
+echo "            FIXES APPLIED"
+echo "========================================="
 echo "✅ Fixed modem detection logic (multiple detection methods)"
 echo "✅ Fixed dbus-python installation issues"
+echo "✅ FIXED NetworkManager permission issues"
+echo "✅ Added mobile-broadband-provider-info database"
+echo "✅ Added netdev group membership for proscout user"
+echo "✅ Enhanced PolicyKit rules for NetworkManager"
+echo "✅ Added NetworkManager configuration files"
 echo "✅ Improved error handling and fallback mechanisms"
 echo "✅ Enhanced cellular setup with better validation"
 echo "✅ Added comprehensive debugging capabilities"
+echo "✅ Added permission repair tools"
 echo
-echo "=== Service Management ==="
+echo "========================================="
+echo "         SERVICE MANAGEMENT"
+echo "========================================="
 echo "Start service:    sudo systemctl start ${SOFTWARE_NAME}"
 echo "Stop service:     sudo systemctl stop ${SOFTWARE_NAME}"
 echo "Check status:     sudo systemctl status ${SOFTWARE_NAME}"
 echo "View logs:        ${SCRIPTS_DIR}/manage.sh logs"
 echo "Debug info:       ${SCRIPTS_DIR}/manage.sh debug"
 echo
-echo "=== Management Script ==="
+echo "========================================="
+echo "         MANAGEMENT SCRIPT"
+echo "========================================="
 echo "Location: ${SCRIPTS_DIR}/manage.sh"
+echo "Shortcut: ~/manage-device.sh"
+echo ""
 echo "Key commands:"
-echo "  ${SCRIPTS_DIR}/manage.sh debug           # Comprehensive debugging"
-echo "  ${SCRIPTS_DIR}/manage.sh detect-modem   # Detect cellular modem"
-echo "  ${SCRIPTS_DIR}/manage.sh setup-cellular # Configure cellular connection"
-echo "  ${SCRIPTS_DIR}/manage.sh test-cellular  # Test cellular connectivity"
-echo "  ${SCRIPTS_DIR}/manage.sh reset-modem    # Reset modem system"
+echo "  ~/manage-device.sh debug           # Comprehensive debugging"
+echo "  ~/manage-device.sh fix-permissions # Fix NetworkManager/ModemManager permissions"
+echo "  ~/manage-device.sh detect-modem    # Detect cellular modem"
+echo "  ~/manage-device.sh setup-cellular  # Configure cellular connection"
+echo "  ~/manage-device.sh test-cellular   # Test cellular connectivity"
+echo "  ~/manage-device.sh reset-modem     # Reset modem system"
 echo
-echo "=== Troubleshooting ==="
+echo "========================================="
+echo "         TROUBLESHOOTING"
+echo "========================================="
 echo "If you encounter issues:"
-echo "1. Check hardware: ${SCRIPTS_DIR}/manage.sh check-devices"
-echo "2. Detect modem: ${SCRIPTS_DIR}/manage.sh detect-modem"
-echo "3. Debug service: ${SCRIPTS_DIR}/manage.sh debug"
-echo "4. Reset modem: ${SCRIPTS_DIR}/manage.sh reset-modem"
+echo "1. Check hardware: ~/manage-device.sh check-devices"
+echo "2. Fix permissions: ~/manage-device.sh fix-permissions"
+echo "3. Detect modem: ~/manage-device.sh detect-modem"
+echo "4. Debug service: ~/manage-device.sh debug"
+echo "5. Reset modem: ~/manage-device.sh reset-modem"
 echo
-echo "=== Next Steps ==="
+echo "========================================="
+echo "           NEXT STEPS"
+echo "========================================="
 echo "1. Reboot the system: sudo reboot"
-echo "2. After reboot, check service: ${SCRIPTS_DIR}/manage.sh status"
-echo "3. Test modem detection: ${SCRIPTS_DIR}/manage.sh detect-modem"
-echo "4. Monitor logs: ${SCRIPTS_DIR}/manage.sh logs"
+echo "2. After reboot, check service: ~/manage-device.sh status"
+echo "3. Test permissions: ~/manage-device.sh check-permissions"
+echo "4. Test modem detection: ~/manage-device.sh detect-modem"
+echo "5. Monitor logs: ~/manage-device.sh logs"
 echo
 if [ "$CELLULAR_SETUP_OPTION" -ne 1 ]; then
-    echo "5. Setup cellular: ${SCRIPTS_DIR}/manage.sh setup-cellular"
+    echo "6. Setup cellular: ~/manage-device.sh setup-cellular"
     echo
 fi
 
-print_status "FIXED Installation script completed!"
-print_status "This version should work much better than the previous one!"
+echo "========================================="
+echo "        IMPORTANT NOTES"
+echo "========================================="
+echo "🔧 This version includes ALL the fixes for:"
+echo "   - NetworkManager permission issues"
+echo "   - APN database problems"
+echo "   - Modem detection issues"
+echo "   - D-Bus integration problems"
+echo ""
+echo "🚀 The cellular setup should now work without"
+echo "   'Connection activation failed: Not authorized'"
+echo "   errors!"
+echo ""
+echo "📋 All troubleshooting tools are now available"
+echo "   in the management script."
+echo ""
+
+print_status "UPDATED Installation script completed!"
+print_status "This version includes ALL the NetworkManager permission fixes!"
 print_warning "IMPORTANT: Please reboot the system for all changes to take effect!"
-echo "Run: sudo reboot"
+echo
+echo "🔄 Run: sudo reboot"
+echo "✅ Then test: ~/manage-device.sh setup-cellular"

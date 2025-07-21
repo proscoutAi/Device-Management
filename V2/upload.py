@@ -26,19 +26,14 @@ class CloudFunctionClient:
         self.session_start_time = datetime.now()
         self.sleep_interval = sleep_interval
 
-    def upload_json(self,timestamp,flow_meter_counter,gps_data,image):
+    def upload_json(self,batch_payload):
      try:
 
         json_txt = {"device_uuid": self.device_uuid,
-                               "sessionTimestamp": self.session_start_time.isoformat(),
-                               "timestamp": timestamp.isoformat(),
-                               "sleep_time":self.sleep_interval,
-                               "flow_meter_counter": flow_meter_counter,
-                               "latitude":gps_data['latitude'],
-                               "longitude": gps_data['longitude'],
-                               "speed_kmh":gps_data['speed_kmh'],
-                               "heading":gps_data['heading'],
-                               "image_base_64":image}
+                    "sessionTimestamp": self.session_start_time.isoformat(),
+                    "sleep_time":self.sleep_interval,
+                    "payload" : batch_payload
+                    }
 
         #send json to google run function
         # Send HTTP POST request
