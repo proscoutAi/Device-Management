@@ -10,10 +10,13 @@ sys.stderr.reconfigure(line_buffering=True)
 
 
 class GPSManager:
-    def __init__(self, port='/dev/ttyGSM1', baudrate=115200):
+    def __init__(self, command_port='/dev/ttyGSM0', data_port='/dev/ttyGSM2', baudrate=115200):
       try:
-        # Open serial connection to GSM multiplexer
-        self.ser = serial.Serial(port, baudrate, timeout=2)
+        # Command channel for AT commands
+        self.cmd_ser = serial.Serial(command_port, baudrate, timeout=2)
+        # Data channel for NMEA data
+        self.data_ser = serial.Serial(data_port, baudrate, timeout=2)
+
         # AT commands to request NMEA data
         self.at_command = [
             'AT+UGRMC?\r\n',
@@ -43,19 +46,19 @@ class GPSManager:
     
     def send_at_command(self, command):
         """Send AT command and return response"""
-        if not self.ser:
+        if not self.cmd_ser:
             return None
             
         try:
-            self.ser.flushInput()
-            self.ser.write(f"{command}\r\n".encode())
+            self.cmd_ser.flushInput()
+            self.cmd_ser.write(f"{command}\r\n".encode())
             
             response = ""
             start_time = time.time()
             
             while time.time() - start_time < 3:
-                if self.ser.in_waiting > 0:
-                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                if self.cmd_ser.in_waiting > 0:
+                    line = self.cmd_ser.readline().decode('utf-8', errors='ignore').strip()
                     if line:
                         response += line + "\n"
                         if line == "OK" or line.startswith("ERROR"):
