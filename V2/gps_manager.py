@@ -40,7 +40,7 @@ class GPSManager:
             'last_update': 'N/A'
         }
       except Exception as e:
-            print(f"Failed to connect to {port}: {e}")
+            print(f"Failed to connect to {command_port}: {e}")
             return None
     
     
