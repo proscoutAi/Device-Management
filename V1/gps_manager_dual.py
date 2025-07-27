@@ -3,6 +3,8 @@ import time
 from datetime import datetime
 import sys
 import serial
+import threading
+from threading import Lock
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -11,7 +13,7 @@ class GPSManager_dual:
     def __init__(self, command_port='/dev/ttyAMA1', baudrate=115200):
         try:
             # Direct NMEA data connection for dual band GPS
-            self.cmd_ser = serial.Serial(command_port, baudrate, timeout=2)
+            self.cmd_ser = serial.Serial(command_port, baudrate, timeout=0.1)
             
             self.gps_data_dual = {
                 'fix_status': 'No Fix',
@@ -29,38 +31,53 @@ class GPSManager_dual:
                 'time_utc': 'N/A',
                 'date': 'N/A',
                 'last_update': 'N/A',
-                'satellite_systems': [],  # Track which systems are active
-                'signal_quality': 'Unknown'
+                'satellite_systems': [],
+                'signal_quality': 'Unknown',
+                'data_timestamp': time.time()  # Add timestamp for freshness
             }
+            
+            # Threading for continuous reading
+            self.data_lock = Lock()
+            self.running = True
+            self.reader_thread = threading.Thread(target=self._continuous_read, daemon=True)
+            self.reader_thread.start()
             
         except Exception as e:
             print(f"Failed to connect to {command_port}: {e}")
-            return None
+            self.cmd_ser = None
     
-    def read_nmea_sentences(self):
-        """Read multiple NMEA sentences from dual band GPS"""
-        if not self.cmd_ser:
-            return []
-            
-        try:
-            sentences = []
-            start_time = time.time()
-            
-            # Read for up to 3 seconds to get a good sample of NMEA data
-            while time.time() - start_time < 3:
+    def _continuous_read(self):
+        """Continuously read NMEA data in background thread"""
+        while self.running and self.cmd_ser:
+            try:
                 if self.cmd_ser.in_waiting > 0:
                     line = self.cmd_ser.readline().decode('utf-8', errors='ignore').strip()
                     if line and line.startswith('$') and '*' in line:
-                        sentences.append(line)
-                        # Stop after getting a good sample
-                        if len(sentences) >= 15:
-                            break
-                time.sleep(0.01)
-            
-            return sentences
-        except Exception as e:
-            print(f"Error reading NMEA: {e}")
-            return []
+                        self._parse_nmea_line(line)
+                time.sleep(0.01)  # Small delay to prevent CPU overload
+            except Exception as e:
+                print(f"Error in continuous read: {e}")
+                time.sleep(0.1)
+    
+    def _parse_nmea_line(self, sentence):
+        """Parse individual NMEA sentence and update data"""
+        with self.data_lock:
+            try:
+                if 'RMC' in sentence:
+                    self.parse_rmc(sentence)
+                elif 'GGA' in sentence:
+                    self.parse_gga(sentence)
+                elif 'GSA' in sentence:
+                    self.parse_gsa(sentence)
+                elif 'GSV' in sentence:
+                    self.parse_gsv(sentence)
+                
+                # Update timestamp whenever we get new data
+                self.gps_data_dual['data_timestamp'] = time.time()
+                self.gps_data_dual['last_update'] = datetime.now().strftime('%H:%M:%S')
+                
+            except Exception as e:
+                pass
     
     def parse_rmc(self, nmea_sentence):
         """Parse RMC sentence (works with GPRMC, GNRMC, GLRMC, etc.)"""
@@ -211,41 +228,22 @@ class GPSManager_dual:
         except Exception as e:
             pass
     
-    def update_gps_data(self):
-        """Update GPS data from dual band GPS device"""
-        # Clear satellite systems for fresh update
-        self.gps_data_dual['satellite_systems'] = []
-        
-        # Read NMEA sentences
-        sentences = self.read_nmea_sentences()
-        
-        # Parse each sentence
-        for sentence in sentences:
-            try:
-                if 'RMC' in sentence:
-                    self.parse_rmc(sentence)
-                elif 'GGA' in sentence:
-                    self.parse_gga(sentence)
-                elif 'GSA' in sentence:
-                    self.parse_gsa(sentence)
-                elif 'GSV' in sentence:
-                    self.parse_gsv(sentence)
-            except Exception as e:
-                continue
-        
-        self.gps_data_dual['last_update'] = datetime.now().strftime('%H:%M:%S')
-    
     def get_gps_data(self):
-        """Get current GPS data"""
-        try:
-            self.update_gps_data()
-            return self.gps_data_dual
-        except Exception as e:
-            print(f"GPS Manager: Error getting coordinates: {e}")
-            return self.gps_data_dual
+        """Get current GPS data - now returns immediately cached data"""
+        with self.data_lock:
+            # Return a copy of the current data
+            return self.gps_data_dual.copy()
+    
+    def get_data_age(self):
+        """Get age of GPS data in seconds"""
+        with self.data_lock:
+            return time.time() - self.gps_data_dual['data_timestamp']
     
     def close(self):
-        """Close serial connection"""
+        """Close serial connection and stop thread"""
+        self.running = False
+        if self.reader_thread and self.reader_thread.is_alive():
+            self.reader_thread.join(timeout=1)
         if self.cmd_ser:
             self.cmd_ser.close()
 
@@ -254,31 +252,34 @@ gps_manager_dual = GPSManager_dual()
 
 def get_gps_data_dual():
     global gps_manager_dual
-    if gps_manager_dual is not None:
+    if gps_manager_dual is not None and gps_manager_dual.cmd_ser:
         return gps_manager_dual.get_gps_data()
     else:
         print("GPS is not connected, retrying...")
         gps_manager_dual = GPSManager_dual()
-        return gps_manager_dual.get_gps_data() if gps_manager_dual else None
+        return gps_manager_dual.get_gps_data() if gps_manager_dual and gps_manager_dual.cmd_ser else None
+
+def get_gps_data_age():
+    """Get age of dual band GPS data"""
+    global gps_manager_dual
+    if gps_manager_dual is not None:
+        return gps_manager_dual.get_data_age()
+    return None
 
 # Test function
 if __name__ == "__main__":
-    print("Testing Dual Band GPS Manager...")
+    print("Testing Threaded Dual Band GPS Manager...")
     try:
         while True:
             data = get_gps_data_dual()
+            age = get_gps_data_age()
             if data:
                 print(f"\n=== GPS Data Update ===")
                 print(f"Status: {data['fix_status']}")
                 print(f"Position: {data['latitude']:.6f}, {data['longitude']:.6f}")
-                print(f"Altitude: {data['altitude']:.1f}m")
-                print(f"Speed: {data['speed_kmh']:.1f} km/h")
-                print(f"Satellites: {data['satellites_used']} used, {data['satellites_view']} visible")
-                print(f"HDOP: {data['hdop']:.2f}")
-                print(f"Systems: {', '.join(data['satellite_systems'])}")
-                print(f"Quality: {data['signal_quality']}")
+                print(f"Data Age: {age:.2f}s")
                 print(f"Updated: {data['last_update']}")
-            time.sleep(5)
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\nStopping GPS test...")
         if gps_manager_dual:

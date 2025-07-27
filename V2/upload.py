@@ -58,4 +58,3 @@ class CloudFunctionClient:
      except Exception as e:
             print(f"âŒ Unexpected error: {e}")
             return {'error': f'Unexpected error: {str(e)}'}
-            

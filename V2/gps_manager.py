@@ -206,7 +206,48 @@ gps_manager = GPSManager()
 def get_gps_data():
     global gps_manager
     if gps_manager is not None:
-        return gps_manager.get_gps_data()
+        try:
+            return gps_manager.get_gps_data()
+        except Exception as e:
+            print(f"GPS error: {e}")
+            # Return safe defaults instead of recursing
+            return {
+                'fix_status': 'No Fix',
+                'latitude': 0.0,
+                'longitude': 0.0,
+                'altitude': 0.0,
+                'speed_knots': 0.0,
+                'speed_kmh': 0.0,
+                'course': 0.0,
+                'satellites_used': 0,
+                'satellites_view': 0,
+                'hdop': 0.0,
+                'time_utc': 'N/A',
+                'date': 'N/A',
+                'last_update': 'N/A'
+            }
     else:
-        print("GPS is not connected retrying")
-        gps_manager = GPSManager()
+        print("GPS is not connected, retrying")
+        try:
+            gps_manager = GPSManager()
+            if gps_manager is not None:
+                return gps_manager.get_gps_data()
+        except Exception as e:
+            print(f"Failed to reconnect GPS: {e}")
+        
+        # Return safe defaults if GPS manager creation fails
+        return {
+            'fix_status': 'No Fix',
+            'latitude': 0.0,
+            'longitude': 0.0,
+            'altitude': 0.0,
+            'speed_knots': 0.0,
+            'speed_kmh': 0.0,
+            'course': 0.0,
+            'satellites_used': 0,
+            'satellites_view': 0,
+            'hdop': 0.0,
+            'time_utc': 'N/A',
+            'date': 'N/A',
+            'last_update': 'N/A'
+        }

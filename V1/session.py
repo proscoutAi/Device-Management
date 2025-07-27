@@ -1,6 +1,7 @@
 from datetime import datetime
 from threading import Thread
 from time import sleep
+import time
 
 from camera import Camera
 from upload import CloudFunctionClient 
@@ -27,6 +28,8 @@ production = config.getboolean('Setup', 'production')
 url_key = 'cloud_function_url_prod' if production else 'cloud_function_url_stg'
 cloud_function_url = config.get('Setup', url_key)
 print(f"working cloud url is:{cloud_function_url}")
+interval_in_hours = sleep_interval/3600
+flow_meter_pulses_per_litter = config.getint('Setup', 'flow_meter_pulses_per_litter')
 
 executor = ThreadPoolExecutor(max_workers=5)
 
@@ -71,24 +74,36 @@ class Session:
             gp_dual = get_gps_data_dual()
             print(f"dual gps:{gp_dual}")
         
-            if gps_data is not None:
-        
-                print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
-                image = None
-                if camera_connected and should_i_snap_image == self.camera_interval:
+            if gps_data is None:
+                gps_data = {
+                'latitude': 0.0,
+                'longitude': 0.0,
+                'altitude': 0.0,
+                'timestamp': time.time(),
+                'speed_kmh': 0,
+                'heading': 0,
+                'fix_quality': None,
+                'satellites': None,
+                'gps_timestamp': None
+                }
+            
+            print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
+            image = None
+            if camera_connected and should_i_snap_image == self.camera_interval:
                     image = self.camera.snap_as_base64()
                     should_i_snap_image = 0
-                elif camera_connected:
+            elif camera_connected:
                     should_i_snap_image +=1
  
-                flow_counter = 0
-                if flow_meter_connected:
-                    flow_counter = get_counter_and_reset()
-                
-                snap_time = datetime.now()
+            litter_per_hour = 0
+            if flow_meter_connected:
+                flow_counter = get_counter_and_reset()
+                litter_per_hour = (flow_counter/flow_meter_pulses_per_litter)/interval_in_hours
+                 
+            snap_time = datetime.now()
            
-                # Submit the task and store the future
-                executor.submit(self.upload_class.upload_json, snap_time, flow_counter, gps_data, image,gp_dual)
+            # Submit the task and store the future
+            executor.submit(self.upload_class.upload_json, snap_time, litter_per_hour, gps_data, image,gp_dual)
     
             
             sleep(self.interval)

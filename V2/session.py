@@ -1,6 +1,7 @@
 from datetime import datetime
 from threading import Thread
 from time import sleep
+import time
 
 from camera import Camera
 from upload import CloudFunctionClient 
@@ -14,9 +15,6 @@ import sys
 import gc
 import socket
 
-# Force Python to use IPv4 only (disable IPv6)
-socket.getaddrinfo = lambda host, port, family=0, type=0, proto=0, flags=0: \
-    socket.getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -36,6 +34,8 @@ cloud_function_url = config.get('Setup', url_key)
 print(f"working cloud url is:{cloud_function_url}")
 batch_size = config.getint('Setup', 'batch_size')
 imu_rate_per_second = config.getint('Setup', 'imu_rate_per_second')
+interval_in_hours = sleep_interval/3600
+flow_meter_pulses_per_litter = config.getint('Setup', 'flow_meter_pulses_per_litter')
 
 executor = ThreadPoolExecutor(max_workers=5)
 
@@ -98,30 +98,39 @@ class Session:
         while self.running:
         
             gps_data = get_gps_data()
+            if gps_data['fix_status'] == 'No Fix':
+                gps_data = {
+                'latitude': 0.0,
+                'longitude': 0.0,
+                'altitude': 0.0,
+                'timestamp': time.time(),
+                'speed_kmh': 0,
+                'course': 0,
+                'fix_quality': None,
+                'satellites': None,
+                'gps_timestamp': None
+                }
         
-            if gps_data['fix_status']=='Valid Fix':
         
-                print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
-                image = None
-                if camera_connected and should_i_snap_image == self.camera_interval:
-                    image = self.camera.snap_as_base64()
-                    should_i_snap_image = 0
-                elif camera_connected:
-                    should_i_snap_image +=1
+            print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
+            image = None
+            if camera_connected and should_i_snap_image == self.camera_interval:
+                image = self.camera.snap_as_base64()
+                should_i_snap_image = 0
+            elif camera_connected:
+                should_i_snap_image +=1
  
-                flow_counter = 0
-                if flow_meter_connected:
-                    flow_counter = get_counter_and_reset()
+            litter_per_hour = 0
+            if flow_meter_connected:
+                flow_counter = get_counter_and_reset()
+                litter_per_hour = (flow_counter/flow_meter_pulses_per_litter)/interval_in_hours
                     
-                imu_data = self.imu_manager.get_imu_buffer_and_reset()
+            imu_data = self.imu_manager.get_imu_buffer_and_reset()
                 
-                snap_time = datetime.now()
+            snap_time = datetime.now()
                 
-                self.add_payload_to_batch(snap_time, flow_counter, gps_data,imu_data, image)
+            self.add_payload_to_batch(snap_time, litter_per_hour, gps_data,imu_data, image)
                 
-            else:
-                print("gps has no fix")
-            
             sleep(self.interval)
         
     def start(self) -> bool:
