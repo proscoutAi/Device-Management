@@ -10,6 +10,7 @@ from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter
 import configparser
 import os
 from gps_manager import get_coordinates
+from gps_manager_dual import get_gps_data_dual
 import sys
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -70,7 +71,8 @@ class Session:
         while self.running:
  
             gps_data = get_coordinates()
-
+            gp_dual = get_gps_data_dual()
+            print(f"dual gps:{gp_dual}")
         
             if gps_data is None:
                 gps_data = {
@@ -104,7 +106,7 @@ class Session:
             snap_time = datetime.now()
            
             # Submit the task and store the future
-            executor.submit(self.upload_class.upload_json, snap_time, litter_per_hour, gps_data, image,None)
+            executor.submit(self.upload_class.upload_json, snap_time, litter_per_hour, gps_data, image,gp_dual)
     
             
             sleep(self.interval)

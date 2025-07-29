@@ -64,6 +64,7 @@ class Session:
         self.camera_index = camera_index
         self.camera = None
         self.thread = None
+        self.offline_upload_thread = None
         self.upload_threads = []
         self.upload_class = CloudFunctionClient(cloud_function_url,client_device_id,sleep_interval)
         self.batch_payload = []
@@ -83,7 +84,8 @@ class Session:
                         "speed_kmh":gps_data['speed_kmh'],
                         "heading":gps_data['course'],
                         "IMU": imu_data.copy(),
-                        "image_base_64":image})
+                        "image_base_64":image,
+                        "gps_fix": gps_data['fix_status']!='No Fix'})
         
         
         if len(self.batch_payload)==batch_size:
@@ -108,7 +110,8 @@ class Session:
                 'course': 0,
                 'fix_quality': None,
                 'satellites': None,
-                'gps_timestamp': None
+                'gps_timestamp': None,
+                'fix_status': 'No Fix'
                 }
         
         
@@ -168,6 +171,7 @@ class Session:
             
         self.thread = Thread(target=self.run)
         self.thread.start()
+        
 
         return True
 

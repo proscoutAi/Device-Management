@@ -21,6 +21,7 @@ def main():
     while True:
 
         Blue.toggle()
+        Yellow.toggle()
         sleep(0.2)
 
         

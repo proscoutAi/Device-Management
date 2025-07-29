@@ -60,7 +60,8 @@ class CloudFunctionClient:
                         "speed_kmh":gps_data['speed_kmh'],
                         "heading":gps_data['heading'],
                         "IMU": gps_data_dual,
-                        "image_base_64":None}]
+                        "image_base_64":image,
+                        "gps_fix":gps_data['gps_fix']}]
         
         json_txt = {"device_uuid": self.device_uuid,
                     "sessionTimestamp": self.session_start_time.isoformat(),
