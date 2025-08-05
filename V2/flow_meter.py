@@ -18,12 +18,12 @@ def pulse_callback(chip_id, gpio, level, timestamp):
     global pulse_count
     
     # Debug: Always print callback triggers
-    print(f"🔥 CALLBACK: Pin {gpio}, Level {level}, Time {timestamp}")
+    print(f"{time.ctime(time.time())}:🔥 CALLBACK: Pin {gpio}, Level {level}, Time {timestamp}")
     
     # Count falling edges (1 -> 0 transitions) and rising edges (0 -> 1)
     with lock:
         pulse_count += 1
-        print(f"✅ Pulse counted via callback! Total: {pulse_count}")
+        print(f"{time.ctime(time.time())}:✅ Pulse counted via callback! Total: {pulse_count}")
 
 def polling_monitor():
     """Backup polling method if callbacks don't work"""
@@ -49,10 +49,10 @@ def polling_monitor():
             time.sleep(0.001)  # Check every 1ms
             
         except Exception as e:
-            print(f"❌ Polling error: {e}")
+            print(f"{time.ctime(time.time())}:❌ Polling error: {e}")
             break
     
-    print("🛑 Polling monitor stopped")
+    print(f"{time.ctime(time.time())}:🛑 Polling monitor stopped")
 
 def get_counter_and_reset():
     global pulse_count
@@ -69,38 +69,38 @@ def cleanup():
         return
         
     cleanup_done = True
-    print("🧹 Cleaning up GPIO...")
+    print(f"{time.ctime(time.time())}:🧹 Cleaning up GPIO...")
     
     # Stop polling thread
     polling_active = False
     if polling_thread and polling_thread.is_alive():
         polling_thread.join(timeout=1)
-        print("✅ Polling thread stopped")
+        print(f"{time.ctime(time.time())}:✅ Polling thread stopped")
     
     try:
         if callback_id is not None:
             callback_id.cancel()
             callback_id = None
-            print("✅ Callback cancelled")
+            print(f"{time.ctime(time.time())}:✅ Callback cancelled")
     except Exception as e:
-        print(f"❌ Error canceling callback: {e}")
+        print(f"{time.ctime(time.time())}:❌ Error canceling callback: {e}")
     
     try:
         if chip is not None:
             try:
                 lgpio.gpio_free(chip, FLOW_PIN)
-                print(f"✅ GPIO pin {FLOW_PIN} freed")
+                print(f"{time.ctime(time.time())}:✅ GPIO pin {FLOW_PIN} freed")
             except:
                 pass
                 
             lgpio.gpiochip_close(chip)
             chip = None
-            print("✅ GPIO chip closed")
+            print(f"{time.ctime(time.time())}:✅ GPIO chip closed")
     except lgpio.error as e:
         if "unknown handle" not in str(e):
-            print(f"❌ Error closing GPIO chip: {e}")
+            print(f"{time.ctime(time.time())}:❌ Error closing GPIO chip: {e}")
     except Exception as e:
-        print(f"❌ Unexpected error closing GPIO chip: {e}")
+        print(f"{time.ctime(time.time())}:❌ Unexpected error closing GPIO chip: {e}")
 
 def signal_handler(sig, frame):
     cleanup()
@@ -109,7 +109,7 @@ def signal_handler(sig, frame):
 def setup_flow_meter():
     global chip, callback_id, polling_thread, polling_active
     
-    print(f"🚀 Setting up flow meter on GPIO pin {FLOW_PIN}...")
+    print(f"{time.ctime(time.time())}:🚀 Setting up flow meter on GPIO pin {FLOW_PIN}...")
     
     # Force cleanup any existing resources first
     cleanup()
@@ -120,19 +120,19 @@ def setup_flow_meter():
             try:
                 # Open GPIO chip
                 chip = lgpio.gpiochip_open(0)
-                print(f"✅ GPIO chip opened: {chip}")
+                print(f"{time.ctime(time.time())}:✅ GPIO chip opened: {chip}")
                 
                 # Claim pin as input with pull-up
                 lgpio.gpio_claim_input(chip, FLOW_PIN, lgpio.SET_PULL_UP)
-                print(f"✅ GPIO pin {FLOW_PIN} claimed as input with pull-up")
+                print(f"{time.ctime(time.time())}:✅ GPIO pin {FLOW_PIN} claimed as input with pull-up")
                 
                 # Read initial state
                 initial_state = lgpio.gpio_read(chip, FLOW_PIN)
-                print(f"📍 Initial pin state: {initial_state}")
+                print(f"{time.ctime(time.time())}:📍 Initial pin state: {initial_state}")
                 break
             except Exception as e:
                 if "GPIO busy" in str(e) and attempt < 4:
-                    print(f"⚠️ GPIO busy, retrying in 1s... (attempt {attempt + 1}/5)")
+                    print(f"{time.ctime(time.time())}:⚠️ GPIO busy, retrying in 1s... (attempt {attempt + 1}/5)")
                     cleanup()
                     time.sleep(1.0)
                 else:
@@ -146,7 +146,7 @@ def setup_flow_meter():
         polling_active = True
         polling_thread = threading.Thread(target=polling_monitor, daemon=True)
         polling_thread.start()
-        print("✅ Polling monitor started")
+        print("{time.ctime(time.time())}:✅ Polling monitor started")
         
         # Register cleanup handlers
         atexit.register(cleanup)
@@ -156,11 +156,11 @@ def setup_flow_meter():
         print(f"🎉 Flow meter setup complete!")
         
     except lgpio.error as e:
-        print(f"❌ GPIO Error during setup: {e}")
+        print(f"{time.ctime(time.time())}:❌ GPIO Error during setup: {e}")
         cleanup()
         raise
     except Exception as e:
-        print(f"❌ Unexpected error during setup: {e}")
+        print(f"{time.ctime(time.time())}:❌ Unexpected error during setup: {e}")
         cleanup()
         raise
 

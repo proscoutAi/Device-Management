@@ -3,6 +3,8 @@ from threading import Thread
 from time import sleep
 import time
 
+import psutil
+
 from camera import Camera
 from upload import CloudFunctionClient 
 from concurrent.futures import ThreadPoolExecutor
@@ -31,13 +33,13 @@ flow_meter_connected = config.getboolean('Setup', 'flow_meter')
 production = config.getboolean('Setup', 'production')
 url_key = 'cloud_function_url_prod' if production else 'cloud_function_url_stg'
 cloud_function_url = config.get('Setup', url_key)
-print(f"working cloud url is:{cloud_function_url}")
+print(f"{time.ctime(time.time())}:working cloud url is:{cloud_function_url}")
 batch_size = config.getint('Setup', 'batch_size')
 imu_rate_per_second = config.getint('Setup', 'imu_rate_per_second')
 interval_in_hours = sleep_interval/3600
 flow_meter_pulses_per_litter = config.getint('Setup', 'flow_meter_pulses_per_litter')
 
-executor = ThreadPoolExecutor(max_workers=5)
+executor = ThreadPoolExecutor(max_workers=3)
 
 # Read the unique identifier (UUID or MAC address)
 with open("/home/proscout/ProScout-master/device-manager/device_id.txt", "r") as f:
@@ -45,6 +47,27 @@ with open("/home/proscout/ProScout-master/device-manager/device_id.txt", "r") as
 
 time_format = '%Y-%m-%d_%H-%M-%S'
 
+def log_system_status():
+    """Standalone function to log system status"""
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        
+        # Get ppp0 stats
+        net_stats = psutil.net_io_counters(pernic=True)
+        if 'ppp0' in net_stats:
+            ppp0 = net_stats['ppp0']
+            bandwidth_info = f"ppp0: {ppp0.bytes_sent} sent, {ppp0.bytes_recv} recv"
+        else:
+            bandwidth_info = "ppp0: not found"
+        
+        timestamp = time.ctime(time.time())
+        print(f"{timestamp}:📊 CPU: {cpu_percent:.1f}%, "
+              f"RAM: {memory.percent:.1f}% ({memory.used/1024/1024:.0f}MB), "
+              f"{bandwidth_info}")
+              
+    except Exception as e:
+        print(f"{time.ctime(time.time())}:📊 System monitoring error: {e}")
 
 
 class Session:
@@ -70,6 +93,12 @@ class Session:
         self.batch_payload = []
         self.imu_manager = None
         
+        # IMU health monitoring
+        self.imu_last_data_time = time.time()
+        self.imu_restart_attempts = 0
+        self.max_imu_restarts = 5
+        self.imu_timeout_seconds = 30  # If no IMU data for 30 seconds, restart
+        
     
     def flash_batch(self):
         executor.submit(self.upload_class.upload_json, self.batch_payload)
@@ -92,10 +121,69 @@ class Session:
             self.flash_batch()
             gc.collect()
 
+    def check_imu_health(self):
+        """Check if IMU is providing data and restart if needed"""
+        current_time = time.time()
+        
+        # Check if IMU thread is still alive
+        if not self.imu_manager or not self.imu_manager.thread.is_alive():
+            print(f"{time.ctime(time.time())}:IMU thread has died!")
+            log_system_status()
+            return self.restart_imu()
+        
+        # Check if we're getting fresh data
+        time_since_data = current_time - self.imu_last_data_time
+        if time_since_data > self.imu_timeout_seconds:
+            print(f"{time.ctime(time.time())}:No IMU data received for {time_since_data:.1f} seconds")
+            log_system_status()
+            return self.restart_imu()
+        
+        return True
+    
+    def restart_imu(self):
+        """Attempt to restart the IMU manager"""
+        if self.imu_restart_attempts >= self.max_imu_restarts:
+            print(f"{time.ctime(time.time())}:Maximum IMU restart attempts ({self.max_imu_restarts}) reached. Giving up on IMU.")
+            return False
+        
+        self.imu_restart_attempts += 1
+        print(f"{time.ctime(time.time())}:Attempting IMU restart #{self.imu_restart_attempts}")
+        
+        try:
+            # Stop existing IMU manager
+            if self.imu_manager:
+                print(f"{time.ctime(time.time())}:Stopping existing IMU manager...")
+                self.imu_manager.running = False
+                if self.imu_manager.thread.is_alive():
+                    self.imu_manager.thread.join(timeout=10)
+                self.imu_manager = None
+                gc.collect()
+            
+            # Wait a moment for cleanup
+            time.sleep(2)
+            
+            # Create new IMU manager
+            print(f"{time.ctime(time.time())}:Creating new IMU manager...")
+            self.imu_manager = IMUManager(imu_rate_per_second)
+            
+            # Reset timing
+            self.imu_last_data_time = time.time()
+            
+            print(f"{time.ctime(time.time())}:IMU restart successful!")
+            return True
+            
+        except Exception as e:
+            print(f"{time.ctime(time.time())}:IMU restart failed: {e}")
+            self.imu_manager = None
+            return False
+
     def run(self):
         """The main loop of the session"""
-        print("in session running.....")
+        print(f"{time.ctime(time.time())}:in session running.....")
         should_i_snap_image = 0
+        imu_check_counter = 0
+        imu_check_interval = 10  # Check IMU health every 10 loops
+        log_performance = 0 #log perfomance once a minute
     
         while self.running:
         
@@ -115,7 +203,7 @@ class Session:
                 }
         
         
-            print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
+            #print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
             image = None
             if camera_connected and should_i_snap_image == self.camera_interval:
                 image = self.camera.snap_as_base64()
@@ -127,13 +215,39 @@ class Session:
             if flow_meter_connected:
                 flow_counter = get_counter_and_reset()
                 litter_per_hour = (flow_counter/flow_meter_pulses_per_litter)/interval_in_hours
+            
+            # Get IMU data with health checking
+            imu_data = []
+            if self.imu_manager:
+                try:
+                    imu_data = self.imu_manager.get_imu_buffer_and_reset()
                     
-            imu_data = self.imu_manager.get_imu_buffer_and_reset()
+                    # Update last data time if we got data
+                    if imu_data:
+                        self.imu_last_data_time = time.time()
+                        # Reset restart attempts on successful data
+                        if self.imu_restart_attempts > 0:
+                            print(f"{time.ctime(time.time())}:IMU data flowing normally again")
+                            self.imu_restart_attempts = 0
+                    
+                except Exception as e:
+                    print(f"{time.ctime(time.time())}:Error getting IMU data: {e}")
+                    imu_data = []
+            
+            # Periodic IMU health check
+            imu_check_counter += 1
+            if imu_check_counter >= imu_check_interval:
+                imu_check_counter = 0
+                if not self.check_imu_health():
+                    print(f"{time.ctime(time.time())}:IMU health check failed - continuing without IMU data")
                 
             snap_time = datetime.now()
                 
-            self.add_payload_to_batch(snap_time, litter_per_hour, gps_data,imu_data, image)
-                
+            self.add_payload_to_batch(snap_time, litter_per_hour, gps_data, imu_data, image)
+            log_performance += 1
+            if log_performance ==60:
+                log_system_status()
+                log_performance = 0
             sleep(self.interval)
         
     def start(self) -> bool:
@@ -153,8 +267,14 @@ class Session:
           setup_flow_meter()
 
         # initiate IMU
-        # Create global instance
-        self.imu_manager = IMUManager(imu_rate_per_second)
+        try:
+            self.imu_manager = IMUManager(imu_rate_per_second)
+            self.imu_last_data_time = time.time()
+            print(f"{time.ctime(time.time())}:IMU initialized successfully")
+        except Exception as e:
+            print(f"{time.ctime(time.time())}:Failed to initialize IMU: {e}")
+            print(f"{time.ctime(time.time())}:Continuing without IMU data")
+            self.imu_manager = None
  
         self.start_time = datetime.now()
         
@@ -163,8 +283,8 @@ class Session:
             try:
                 self.camera = Camera(self.camera_index)
             except Exception as e:
-                print(f"Camera is disconnected or cannot be opened: {e}")
-                print("Continue without image capturing")
+                print(f"{time.ctime(time.time())}:Camera is disconnected or cannot be opened: {e}")
+                print(f"{time.ctime(time.time())}:Continue without image capturing")
                 self.camera = None
         else:
             self.camera = None
@@ -195,5 +315,12 @@ class Session:
         print('Waiting for uploads to finish')
 
         self.thread.join()
+        
+        # Properly stop IMU manager
+        if self.imu_manager:
+            print("Stopping IMU manager...")
+            self.imu_manager.running = False
+            if self.imu_manager.thread.is_alive():
+                self.imu_manager.thread.join(timeout=10)
         
         return True

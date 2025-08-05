@@ -104,11 +104,11 @@ class IMUManager:
             MMC5983MA_WHO_AM_I_response = (bus.read_byte_data(MMC5983MA_ADDRESS,MMC5983MA_WHO_AM_I ))
 
         except IOError as f:
-            print('OzzMaker LTE IMU ALT not found')        #need to do something here, so we just print a space
+            print(f'{time.ctime(time.time())}:OzzMaker LTE IMU ALT not found')        #need to do something here, so we just print a space
             sys.exit(1)
         else:
             if (LSM6DSL_WHO_AM_I_response == 0x6A) and (MMC5983MA_WHO_AM_I_response == 0x30):
-                print("Found OzzMaker LTE IMU ALT (LSM6DSL and MMC5983MA)")
+                print(f"{time.ctime(time.time())}:Found OzzMaker LTE IMU ALT (LSM6DSL and MMC5983MA)")
 
         time.sleep(1)
         
@@ -293,7 +293,7 @@ class IMUManager:
                 
             return heading_deg
         except Exception as e:
-            print(f"IMU Manager: Error getting compensated heading: {e}")
+            print(f"{time.ctime(time.time())}:IMU Manager: Error getting compensated heading: {e}")
             return None
             
 
