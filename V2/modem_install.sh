@@ -492,7 +492,7 @@ configure_network_priority() {
     log_message "Configuring network priority (cellular first, WiFi backup)..."
     
     # Configure NetworkManager to not manage ppp0
-    sudo cat > /etc/NetworkManager/conf.d/99-unmanaged-devices.conf << EOF
+    sudo tee /etc/NetworkManager/conf.d/99-unmanaged-devices.conf > /dev/null << EOF
 [keyfile]
 unmanaged-devices=interface-name:ppp0
 EOF
