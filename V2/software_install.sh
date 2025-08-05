@@ -132,9 +132,11 @@ pip install --upgrade pip
 if [ -f "$DEVICE_DIR/requirements.txt" ]; then
     log_message "Installing dependencies from requirements.txt..."
     pip install -r "$DEVICE_DIR/requirements.txt"
+    # Install additional common dependencies that might be missing
+    pip install psutil
 else
     log_message "No requirements.txt found, installing common dependencies..."
-    pip install requests pyserial gps3 pynmea2
+    pip install requests pyserial gps3 pynmea2 psutil
 fi
 
 log_message "Dependencies installed successfully"
