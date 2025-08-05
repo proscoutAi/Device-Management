@@ -16,8 +16,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration variables - EDIT THESE FOR YOUR SETUP
-APN="hologram"                        # Replace with your carrier's APN
-PROVIDER_NAME="provider"              # Name for your provider (used in PPP peer config)
+APN="net.hotm"                        # Replace with your carrier's APN
+PROVIDER_NAME="HOT Mobile"              # Name for your provider (used in PPP peer config)
 
 # Logging functions
 log() {
@@ -114,11 +114,13 @@ log "📥 Downloading and compiling gsmMuxd..."
 cd /tmp
 sudo rm -rf gsmmux 2>/dev/null || true
 
+sudo apt install git
+
 # Download and compile gsmMuxd as per OZZMaker guide
 sudo mkdir -p /usr/local/src
 cd /usr/local/src
 sudo rm -rf gsmmux 2>/dev/null || true
-sudo git clone https://github.com/ozzmaker/gsmmux
+sudo git clone http://github.com/ozzmaker/gsmmux
 cd gsmmux
 sudo make
 sudo cp gsmMuxd /usr/bin/gsmMuxd
@@ -245,7 +247,7 @@ set -e  # Exit on any error
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="/var/log/sara_r5_install.log"
-APN="your.apn.here"  # Change this to your carrier's APN
+APN="net.hotm"  # Change this to your carrier's APN
 
 # Colors for output
 RED='\033[0;31m'
@@ -254,31 +256,26 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | sudo tee -a "$LOG_FILE"
     echo -e "${GREEN}[INSTALL]${NC} $1"
 }
 
 log_error() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR: $1" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR: $1" | sudo tee -a "$LOG_FILE"
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
 log_warning() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - WARNING: $1" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - WARNING: $1" | sudo tee -a "$LOG_FILE"
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        log_error "This script must be run as root (use sudo)"
-        exit 1
-    fi
-}
+
 
 backup_file() {
     local file="$1"
     if [[ -f "$file" ]]; then
-        cp "$file" "$file.backup.$(date +%Y%m%d_%H%M%S)"
+        sudo cp "$file" "$file.backup.$(date +%Y%m%d_%H%M%S)"
         log_message "Backed up $file"
     fi
 }
@@ -313,11 +310,11 @@ get_user_input() {
 install_dependencies() {
     log_message "Updating system and installing dependencies..."
     
-    apt update
-    apt upgrade -y
+    sudo apt update
+    sudo apt upgrade -y
     
     # Install required packages
-    apt install -y \
+    sudo apt install -y \
         build-essential \
         git \
         ppp \
@@ -332,34 +329,13 @@ install_dependencies() {
     log_message "Dependencies installed successfully"
 }
 
-# Install gsmMuxd
-install_gsm_muxd() {
-    log_message "Installing gsmMuxd (GSM Multiplexer)..."
-    
-    cd /tmp
-    
-    # Download and compile gsmMuxd
-    if [[ ! -d "gsmMuxd" ]]; then
-        git clone https://github.com/ozzmaker/gsmMuxd.git
-    fi
-    
-    cd gsmMuxd
-    make clean
-    make
-    
-    # Install binary
-    cp gsmMuxd /usr/local/bin/
-    chmod +x /usr/local/bin/gsmMuxd
-    
-    log_message "gsmMuxd installed successfully"
-}
 
 # Configure PPP for cellular connection
 configure_ppp() {
     log_message "Configuring PPP for cellular connection..."
     
     # Create PPP provider configuration
-    cat > /etc/ppp/peers/provider << EOF
+    sudo tee /etc/ppp/peers/provider > /dev/null << EOF
 # PPP Provider configuration for SARA-R5 LTE-M
 # Device: ttyGSM1 (multiplexed channel for data)
 /dev/ttyGSM1
@@ -378,8 +354,8 @@ disconnect "/usr/sbin/chat -v -f /etc/ppp/chatscripts/mobile-disconnect.chat"
 EOF
 
     # Create chat script for connection
-    mkdir -p /etc/ppp/chatscripts
-    cat > /etc/ppp/chatscripts/mobile-modem.chat << 'EOF'
+    sudo mkdir -p /etc/ppp/chatscripts
+    sudo tee /etc/ppp/chatscripts/mobile-modem.chat > /dev/null << 'EOF'
 TIMEOUT 20
 ABORT 'BUSY'
 ABORT 'NO CARRIER'
@@ -398,7 +374,7 @@ CONNECT ''
 EOF
 
     # Create disconnect script
-    cat > /etc/ppp/chatscripts/mobile-disconnect.chat << 'EOF'
+    sudo tee /etc/ppp/chatscripts/mobile-disconnect.chat > /dev/null << 'EOF'
 TIMEOUT 5
 ABORT "ERROR"
 ABORT "NO DIALTONE"
@@ -417,24 +393,22 @@ configure_serial() {
     backup_file /boot/firmware/config.txt
     
     # Remove any existing UART configurations
-    sed -i '/enable_uart/d' /boot/firmware/config.txt
-    sed -i '/dtoverlay=disable-bt/d' /boot/firmware/config.txt
+    sudo sed -i '/enable_uart/d' /boot/firmware/config.txt
+    sudo sed -i '/dtoverlay=disable-bt/d' /boot/firmware/config.txt
     
-    # Add UART configuration
-    cat >> /boot/firmware/config.txt << EOF
-
+    # Add UART configuration using tee instead of cat
+    echo "
 # SARA-R5 Serial Configuration
 enable_uart=1
-dtoverlay=disable-bt
-EOF
+dtoverlay=disable-bt" | sudo tee -a /boot/firmware/config.txt > /dev/null
 
     # Disable serial console
     backup_file /boot/firmware/cmdline.txt
-    sed -i 's/console=serial0,115200 //' /boot/firmware/cmdline.txt
+    sudo sed -i 's/console=serial0,115200 //' /boot/firmware/cmdline.txt
     
     # Disable getty on serial
-    systemctl disable serial-getty@ttyS0.service 2>/dev/null || true
-    systemctl disable serial-getty@ttyAMA0.service 2>/dev/null || true
+    sudo systemctl disable serial-getty@ttyS0.service 2>/dev/null || true
+    sudo systemctl disable serial-getty@ttyAMA0.service 2>/dev/null || true
     
     log_message "Serial interface configured"
 }
@@ -443,7 +417,7 @@ EOF
 create_modem_script() {
     log_message "Creating modem initialization script..."
     
-    cat > /usr/local/bin/modem-complete-start.sh << 'EOF'
+    sudo tee /usr/local/bin/modem-complete-start.sh > /dev/null << 'EOF'
 #!/bin/bash
 # SARA-R5 Modem Complete Initialization Script
 
@@ -509,7 +483,7 @@ fi
 log_message "=== Modem initialization completed ==="
 EOF
 
-    chmod +x /usr/local/bin/modem-complete-start.sh
+    sudo chmod +x /usr/local/bin/modem-complete-start.sh
     log_message "Modem initialization script created"
 }
 
@@ -518,13 +492,13 @@ configure_network_priority() {
     log_message "Configuring network priority (cellular first, WiFi backup)..."
     
     # Configure NetworkManager to not manage ppp0
-    cat > /etc/NetworkManager/conf.d/99-unmanaged-devices.conf << EOF
+    sudo cat > /etc/NetworkManager/conf.d/99-unmanaged-devices.conf << EOF
 [keyfile]
 unmanaged-devices=interface-name:ppp0
 EOF
 
     # Set up routing script for network priority
-    cat > /usr/local/bin/network-priority.sh << 'EOF'
+    sudo tee /usr/local/bin/network-priority.sh > /dev/null << 'EOF'
 #!/bin/bash
 # Network priority script - ensures cellular is preferred over WiFi
 
@@ -558,8 +532,8 @@ if ip link show ppp0 &>/dev/null; then
 fi
 EOF
 
-    chmod +x /usr/local/bin/network-priority.sh
-    log_message "Network priority configuration created"
+    sudo chmod +x /usr/local/bin/network-priority.sh
+    sudo log_message "Network priority configuration created"
 }
 
 # Set up logging
@@ -567,17 +541,17 @@ setup_logging() {
     log_message "Setting up logging directories and permissions..."
     
     # Create log files with proper permissions
-    touch /var/log/modem-start.log
-    touch /var/log/proscout.log
+    sudo touch /var/log/modem-start.log
+    sudo touch /var/log/proscout.log
     
     # Set permissions for the specified user
-    chown root:root /var/log/modem-start.log
-    chown $username:$username /var/log/proscout.log
-    chmod 644 /var/log/modem-start.log
-    chmod 644 /var/log/proscout.log
+    sudo chown root:root /var/log/modem-start.log
+    sudo chown $username:$username /var/log/proscout.log
+    sudo chmod 644 /var/log/modem-start.log
+    sudo chmod 644 /var/log/proscout.log
     
     # Set up log rotation
-    cat > /etc/logrotate.d/sara-r5 << EOF
+    sudo tee /etc/logrotate.d/sara-r5 > /dev/null << EOF
 /var/log/modem-start.log /var/log/proscout.log {
     daily
     missingok
@@ -606,7 +580,7 @@ crontab -l 2>/dev/null | grep -v "modem-complete-start.sh" | crontab -
 EOF
 
     # Create systemd service as backup method
-    cat > /etc/systemd/system/sara-r5-modem.service << EOF
+    sudo tee /etc/systemd/system/sara-r5-modem.service > /dev/null << EOF
 [Unit]
 Description=SARA-R5 LTE-M Modem Initialization
 After=multi-user.target
@@ -636,7 +610,7 @@ create_testing_tools() {
     log_message "Creating testing and diagnostic tools..."
     
     # GPS testing script
-    cat > /usr/local/bin/test-gps.sh << 'EOF'
+    sudo tee /usr/local/bin/test-gps.sh > /dev/null << 'EOF'
 #!/bin/bash
 # GPS Test Script for SARA-R5
 
@@ -657,7 +631,7 @@ timeout 30 cat /dev/ttyGSM2 || echo "No GPS data received in 30 seconds"
 EOF
 
     # PPP testing script
-    cat > /usr/local/bin/test-ppp.sh << 'EOF'
+    sudo tee /usr/local/bin/test-ppp.sh > /dev/null << 'EOF'
 #!/bin/bash
 # PPP Connection Test Script
 
@@ -684,7 +658,7 @@ fi
 EOF
 
     # Status script
-    cat > /usr/local/bin/sara-r5-status.sh << 'EOF'
+    sudo tee /usr/local/bin/sara-r5-status.sh > /dev/null << 'EOF'
 #!/bin/bash
 # SARA-R5 System Status Script
 
@@ -732,9 +706,9 @@ tail -5 /var/log/modem-start.log 2>/dev/null | sed 's/^/  /' || echo "  No logs 
 EOF
 
     # Make scripts executable
-    chmod +x /usr/local/bin/test-gps.sh
-    chmod +x /usr/local/bin/test-ppp.sh
-    chmod +x /usr/local/bin/sara-r5-status.sh
+    sudo chmod +x /usr/local/bin/test-gps.sh
+    sudo chmod +x /usr/local/bin/test-ppp.sh
+    sudo chmod +x /usr/local/bin/sara-r5-status.sh
     
     log_message "Testing tools created"
 }
@@ -775,13 +749,12 @@ show_completion_message() {
 main() {
     echo "Starting SARA-R5 Installation..."
     
-    check_root
     get_user_input
     
     log_message "Starting SARA-R5 LTE-M + GPS installation"
     
     install_dependencies
-    install_gsm_muxd
+    
     configure_serial
     configure_ppp
     create_modem_script
