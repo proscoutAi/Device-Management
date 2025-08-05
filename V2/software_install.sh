@@ -52,16 +52,21 @@ sudo apt update || error_exit "Failed to update package lists"
 
 # Install required system packages
 log_message "Installing required system packages..."
-sudo apt install -y python3 python3-pip python3-venv git wget curl unzip || error_exit "Failed to install system packages"
+sudo apt install -y python3 python3-pip python3-venv git wget curl unzip python3-smbus python3-smbus2 i2c-tools python3-gpiozero python3-rpi.gpio || error_exit "Failed to install system packages"
+
+# Enable I2C interface
+log_message "Enabling I2C interface..."
+sudo raspi-config nonint do_i2c 0
 
 # Create proscout user if doesn't exist
 if ! id "proscout" &>/dev/null; then
     log_message "Creating proscout user..."
     sudo useradd -m -s /bin/bash proscout
-    sudo usermod -aG dialout,tty proscout
+    sudo usermod -aG dialout,tty,i2c,gpio proscout
     success_message "Created proscout user"
 else
     log_message "User proscout already exists"
+    sudo usermod -aG dialout,tty,i2c,gpio proscout
 fi
 
 # Create directory structure
@@ -133,13 +138,59 @@ if [ -f "$DEVICE_DIR/requirements.txt" ]; then
     log_message "Installing dependencies from requirements.txt..."
     pip install -r "$DEVICE_DIR/requirements.txt"
     # Install additional common dependencies that might be missing
-    pip install psutil
+    log_message "Installing additional sensor and GPIO libraries..."
+    pip install psutil opencv-python-headless numpy \
+        RPi.GPIO gpiozero lgpio rgpio colorzero \
+        smbus smbus2 \
+        adafruit-blinka adafruit-circuitpython-busdevice adafruit-circuitpython-register \
+        adafruit-circuitpython-bmp3xx adafruit-circuitpython-bmp280 adafruit-circuitpython-bme280 \
+        adafruit-circuitpython-lis3dh adafruit-circuitpython-lsm6ds adafruit-circuitpython-ads1x15
 else
-    log_message "No requirements.txt found, installing common dependencies..."
-    pip install requests pyserial gps3 pynmea2 psutil
+    log_message "No requirements.txt found, installing comprehensive sensor library set..."
+    pip install requests pyserial gps3 pynmea2 psutil opencv-python-headless numpy \
+        RPi.GPIO gpiozero lgpio rgpio colorzero \
+        smbus smbus2 \
+        adafruit-blinka adafruit-circuitpython-busdevice adafruit-circuitpython-register \
+        adafruit-circuitpython-bmp3xx adafruit-circuitpython-bmp280 adafruit-circuitpython-bme280 \
+        adafruit-circuitpython-lis3dh adafruit-circuitpython-lsm6ds adafruit-circuitpython-ads1x15
 fi
 
 log_message "Dependencies installed successfully"
+
+# Test critical imports
+log_message "Testing critical library imports..."
+source "$VENV_DIR/bin/activate"
+
+# Test imports and log results
+python3 -c "
+import sys
+libraries = [
+    'psutil', 'cv2', 'numpy', 'RPi.GPIO', 'gpiozero', 'lgpio', 
+    'smbus', 'smbus2', 'board', 'busio', 'adafruit_bmp3xx'
+]
+
+print('Testing library imports...')
+failed = []
+for lib in libraries:
+    try:
+        __import__(lib)
+        print(f'✓ {lib}')
+    except ImportError as e:
+        print(f'✗ {lib}: {e}')
+        failed.append(lib)
+
+if failed:
+    print(f'Failed imports: {failed}')
+    sys.exit(1)
+else:
+    print('All critical libraries imported successfully!')
+"
+
+if [ $? -ne 0 ]; then
+    log_message "WARNING: Some library imports failed. Application may have issues."
+else
+    log_message "SUCCESS: All critical libraries imported successfully"
+fi
 EOF
 
 # Since you're using crontab, we need to add ProScout startup to the existing modem script

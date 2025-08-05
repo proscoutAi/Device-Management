@@ -45,6 +45,8 @@ echo "Following OZZMaker official guides:"
 echo "1. Enable multiplexing"
 echo "2. Enable modem PPP connection"  
 echo "3. Enable GPS streaming"
+echo "4. Configure I2C for sensors"
+echo "5. Enable auto-login"
 echo
 echo "📋 Configuration:"
 echo "   APN: $APN"
@@ -70,7 +72,84 @@ log "🔄 Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
 log "📦 Installing required packages..."
-sudo apt install -y ppp minicom gpsd gpsd-clients
+sudo apt install -y ppp minicom gpsd gpsd-clients i2c-tools python3-smbus python3-smbus2 git
+
+# ===============================================
+# STEP 1.5: Enable I2C Interface (Added for sensors)
+# ===============================================
+echo
+log "🔌 Enabling I2C interface for sensor communication..."
+
+# Enable I2C via raspi-config
+log "🔧 Enabling I2C interface..."
+sudo raspi-config nonint do_i2c 0
+
+# Get config file path
+if [ -f /boot/firmware/config.txt ]; then
+    CONFIG_FILE="/boot/firmware/config.txt"
+elif [ -f /boot/config.txt ]; then
+    CONFIG_FILE="/boot/config.txt"
+else
+    error "Could not find config.txt"
+fi
+
+# Verify I2C is enabled in config.txt
+if ! grep -q "dtparam=i2c_arm=on" "$CONFIG_FILE"; then
+    log "🔧 Adding I2C to config.txt..."
+    echo "dtparam=i2c_arm=on" | sudo tee -a "$CONFIG_FILE"
+fi
+
+# Load I2C modules
+log "🔧 Loading I2C kernel modules..."
+sudo modprobe i2c-dev 2>/dev/null || true
+sudo modprobe i2c-bcm2835 2>/dev/null || true
+
+# Add modules to load at boot
+if ! grep -q "i2c-dev" /etc/modules; then
+    echo "i2c-dev" | sudo tee -a /etc/modules
+fi
+if ! grep -q "i2c-bcm2835" /etc/modules; then
+    echo "i2c-bcm2835" | sudo tee -a /etc/modules
+fi
+
+log "🔌 I2C configuration completed"
+
+# ===============================================
+# STEP 1.6: Configure Auto-login
+# ===============================================
+echo
+log "🔐 Configuring auto-login..."
+
+# Enable console auto-login using raspi-config
+log "🔧 Enabling console auto-login..."
+sudo raspi-config nonint do_boot_behaviour B2
+
+# Verify the setting
+BOOT_CLI=$(sudo raspi-config nonint get_boot_cli)
+AUTOLOGIN=$(sudo raspi-config nonint get_autologin)
+
+if [ "$BOOT_CLI" = "0" ] && [ "$AUTOLOGIN" = "0" ]; then
+    log "✅ Auto-login to desktop enabled"
+elif [ "$BOOT_CLI" = "1" ] && [ "$AUTOLOGIN" = "0" ]; then
+    log "✅ Auto-login to console enabled"
+else
+    warn "Auto-login configuration may not be set correctly"
+    log "🔧 Manually setting console auto-login..."
+    
+    # Fallback method - directly configure systemd
+    sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+    sudo tee /etc/systemd/system/getty@tty1.service.d/autologin.conf > /dev/null << EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin $USER --noclear %I \$TERM
+EOF
+    
+    # Reload systemd
+    sudo systemctl daemon-reload
+    log "✅ Manual auto-login configuration applied"
+fi
+
+log "🔐 Auto-login configuration completed"
 
 log "🔧 Disabling serial console via raspi-config..."
 # Disable serial console but enable serial port
@@ -96,16 +175,16 @@ if [ -n "$CMDLINE_FILE" ]; then
     sudo sed -i 's/console=ttyS0,[0-9]\+ //g' "$CMDLINE_FILE"
 fi
 
-# Enable UART in config.txt
-log "🔧 Enabling UART in config.txt..."
-if [ -f /boot/firmware/config.txt ]; then
-    CONFIG_FILE="/boot/firmware/config.txt"
-elif [ -f /boot/config.txt ]; then
-    CONFIG_FILE="/boot/config.txt"
-else
-    error "Could not find config.txt"
+# Double-check that serial console is still disabled (important for modem)
+if [ -n "$CMDLINE_FILE" ] && grep -q "console=serial0\|console=ttyAMA0\|console=ttyS0" "$CMDLINE_FILE" 2>/dev/null; then
+    warn "Serial console detected in cmdline.txt - removing again..."
+    sudo sed -i 's/console=serial0,[0-9]\+ //g' "$CMDLINE_FILE"
+    sudo sed -i 's/console=ttyAMA0,[0-9]\+ //g' "$CMDLINE_FILE"
+    sudo sed -i 's/console=ttyS0,[0-9]\+ //g' "$CMDLINE_FILE"
 fi
 
+# Enable UART in config.txt
+log "🔧 Enabling UART in config.txt..."
 if ! grep -q "enable_uart=1" "$CONFIG_FILE"; then
     echo "enable_uart=1" | sudo tee -a "$CONFIG_FILE"
 fi
@@ -113,8 +192,6 @@ fi
 log "📥 Downloading and compiling gsmMuxd..."
 cd /tmp
 sudo rm -rf gsmmux 2>/dev/null || true
-
-sudo apt install git
 
 # Download and compile gsmMuxd as per OZZMaker guide
 sudo mkdir -p /usr/local/src
@@ -126,8 +203,8 @@ sudo make
 sudo cp gsmMuxd /usr/bin/gsmMuxd
 sudo chmod +x /usr/bin/gsmMuxd
 
-log "👥 Adding user to tty group..."
-sudo usermod -a -G tty $USER
+log "👥 Adding user to groups..."
+sudo usermod -a -G tty,i2c,gpio,dialout $USER
 
 # ===============================================
 # STEP 2: Configure PPP Connection (OZZMaker Guide 2)
@@ -189,9 +266,6 @@ holdoff 10
 maxfail 0
 EOF
 
-log "👥 Adding user to dialout group..."
-sudo usermod -a -G dialout $USER
-
 # ===============================================
 # STEP 3: Configure GPS (OZZMaker Guide 3) 
 # ===============================================
@@ -229,195 +303,17 @@ sudo tee /etc/systemd/system/gpsd.service.d/override.conf > /dev/null << 'EOF'
 User=pi
 EOF
 
-log "👥 Adding user to tty group (for GPSD)..."
-sudo usermod -a -G tty $USER
-
-#!/bin/bash
-# SARA-R5 LTE-M + GPS Installation Script for Raspberry Pi Zero
-# Based on OzzMaker configuration guides and proven working setup
-# 
-# This script configures:
-# 1. gsmMuxd for serial multiplexing
-# 2. PPP cellular connection on ttyGSM1 (priority over WiFi)
-# 3. GPS reading on ttyGSM2
-# 4. Automatic startup via cron
-# 5. Logging setup
-
-set -e  # Exit on any error
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_FILE="/var/log/sara_r5_install.log"
-APN="net.hotm"  # Change this to your carrier's APN
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | sudo tee -a "$LOG_FILE"
-    echo -e "${GREEN}[INSTALL]${NC} $1"
-}
-
-log_error() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR: $1" | sudo tee -a "$LOG_FILE"
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-log_warning() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - WARNING: $1" | sudo tee -a "$LOG_FILE"
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-
-
-backup_file() {
-    local file="$1"
-    if [[ -f "$file" ]]; then
-        sudo cp "$file" "$file.backup.$(date +%Y%m%d_%H%M%S)"
-        log_message "Backed up $file"
-    fi
-}
-
-# Get user input for APN
-get_user_input() {
-    echo -e "${YELLOW}SARA-R5 LTE-M + GPS Setup${NC}"
-    echo "This script will configure your Raspberry Pi for cellular connectivity with GPS"
-    echo ""
-    
-    read -p "Enter your carrier's APN (e.g., internet, broadband): " user_apn
-    if [[ -n "$user_apn" ]]; then
-        APN="$user_apn"
-    fi
-    
-    read -p "Enter the username for non-root user (default: pi): " username
-    if [[ -z "$username" ]]; then
-        username="pi"
-    fi
-    
-    if ! id "$username" &>/dev/null; then
-        log_error "User '$username' does not exist"
-        exit 1
-    fi
-    
-    echo ""
-    log_message "Configuration: APN=$APN, User=$username"
-    echo ""
-}
-
-# Update system and install dependencies
-install_dependencies() {
-    log_message "Updating system and installing dependencies..."
-    
-    sudo apt update
-    sudo apt upgrade -y
-    
-    # Install required packages
-    sudo apt install -y \
-        build-essential \
-        git \
-        ppp \
-        wvdial \
-        minicom \
-        python3 \
-        python3-pip \
-        python3-venv \
-        curl \
-        wget
-    
-    log_message "Dependencies installed successfully"
-}
-
-
-# Configure PPP for cellular connection
-configure_ppp() {
-    log_message "Configuring PPP for cellular connection..."
-    
-    # Create PPP provider configuration
-    sudo tee /etc/ppp/peers/provider > /dev/null << EOF
-# PPP Provider configuration for SARA-R5 LTE-M
-# Device: ttyGSM1 (multiplexed channel for data)
-/dev/ttyGSM1
-115200
-crtscts
-modem
-noauth
-noipdefault
-usepeerdns
-defaultroute
-persist
-maxfail 3
-holdoff 10
-connect "/usr/sbin/chat -v -f /etc/ppp/chatscripts/mobile-modem.chat -T $APN"
-disconnect "/usr/sbin/chat -v -f /etc/ppp/chatscripts/mobile-disconnect.chat"
-EOF
-
-    # Create chat script for connection
-    sudo mkdir -p /etc/ppp/chatscripts
-    sudo tee /etc/ppp/chatscripts/mobile-modem.chat > /dev/null << 'EOF'
-TIMEOUT 20
-ABORT 'BUSY'
-ABORT 'NO CARRIER'
-ABORT 'VOICE'
-ABORT 'NO DIALTONE'
-ABORT 'NO DIAL TONE'
-ABORT 'NO ANSWER'
-ABORT 'DELAYED'
-REPORT CONNECT
-'' AT
-OK ATH
-OK ATZ
-OK ATQ0
-OK 'ATDT*99***1#'
-CONNECT ''
-EOF
-
-    # Create disconnect script
-    sudo tee /etc/ppp/chatscripts/mobile-disconnect.chat > /dev/null << 'EOF'
-TIMEOUT 5
-ABORT "ERROR"
-ABORT "NO DIALTONE"
-"" "ATH"
-"" "ATZ"
-EOF
-
-    log_message "PPP configuration created"
-}
-
-# Configure serial interface
-configure_serial() {
-    log_message "Configuring serial interface..."
-    
-    # Enable UART in config.txt
-    backup_file /boot/firmware/config.txt
-    
-    # Remove any existing UART configurations
-    sudo sed -i '/enable_uart/d' /boot/firmware/config.txt
-    sudo sed -i '/dtoverlay=disable-bt/d' /boot/firmware/config.txt
-    
-    # Add UART configuration using tee instead of cat
-    echo "
-# SARA-R5 Serial Configuration
-enable_uart=1
-dtoverlay=disable-bt" | sudo tee -a /boot/firmware/config.txt > /dev/null
-
-    # Disable serial console
-    backup_file /boot/firmware/cmdline.txt
-    sudo sed -i 's/console=serial0,115200 //' /boot/firmware/cmdline.txt
-    
-    # Disable getty on serial
-    sudo systemctl disable serial-getty@ttyS0.service 2>/dev/null || true
-    sudo systemctl disable serial-getty@ttyAMA0.service 2>/dev/null || true
-    
-    log_message "Serial interface configured"
-}
+# ===============================================
+# STEP 4: Create Startup Scripts and Configuration
+# ===============================================
+echo
+echo "=========================================="
+log "🚀 STEP 4: Configure Startup Scripts"
+echo "=========================================="
 
 # Create modem initialization script
-create_modem_script() {
-    log_message "Creating modem initialization script..."
-    
-    sudo tee /usr/local/bin/modem-complete-start.sh > /dev/null << 'EOF'
+log "Creating modem initialization script..."
+sudo tee /usr/local/bin/modem-complete-start.sh > /dev/null << 'EOF'
 #!/bin/bash
 # SARA-R5 Modem Complete Initialization Script
 
@@ -483,22 +379,11 @@ fi
 log_message "=== Modem initialization completed ==="
 EOF
 
-    sudo chmod +x /usr/local/bin/modem-complete-start.sh
-    log_message "Modem initialization script created"
-}
+sudo chmod +x /usr/local/bin/modem-complete-start.sh
 
 # Configure network priority (cellular over WiFi)
-configure_network_priority() {
-    log_message "Configuring network priority (cellular first, WiFi backup)..."
-    
-    # Configure NetworkManager to not manage ppp0
-    sudo tee /etc/NetworkManager/conf.d/99-unmanaged-devices.conf > /dev/null << EOF
-[keyfile]
-unmanaged-devices=interface-name:ppp0
-EOF
-
-    # Set up routing script for network priority
-    sudo tee /usr/local/bin/network-priority.sh > /dev/null << 'EOF'
+log "Configuring network priority script..."
+sudo tee /usr/local/bin/network-priority.sh > /dev/null << 'EOF'
 #!/bin/bash
 # Network priority script - ensures cellular is preferred over WiFi
 
@@ -532,27 +417,22 @@ if ip link show ppp0 &>/dev/null; then
 fi
 EOF
 
-    sudo chmod +x /usr/local/bin/network-priority.sh
-    log_message "Network priority configuration created"
-}
+sudo chmod +x /usr/local/bin/network-priority.sh
+
+# Configure NetworkManager to not manage ppp0
+sudo tee /etc/NetworkManager/conf.d/99-unmanaged-devices.conf > /dev/null << EOF
+[keyfile]
+unmanaged-devices=interface-name:ppp0
+EOF
 
 # Set up logging
-setup_logging() {
-    log_message "Setting up logging directories and permissions..."
-    
-    # Create log files with proper permissions
-    sudo touch /var/log/modem-start.log
-    sudo touch /var/log/proscout.log
-    
-    # Set permissions for the specified user
-    sudo chown root:root /var/log/modem-start.log
-    sudo chown $username:$username /var/log/proscout.log
-    sudo chmod 644 /var/log/modem-start.log
-    sudo chmod 644 /var/log/proscout.log
-    
-    # Set up log rotation
-    sudo tee /etc/logrotate.d/sara-r5 > /dev/null << EOF
-/var/log/modem-start.log /var/log/proscout.log {
+log "Setting up logging..."
+sudo touch /var/log/modem-start.log
+sudo chmod 644 /var/log/modem-start.log
+
+# Set up log rotation
+sudo tee /etc/logrotate.d/sara-r5 > /dev/null << EOF
+/var/log/modem-start.log {
     daily
     missingok
     rotate 7
@@ -563,54 +443,20 @@ setup_logging() {
 }
 EOF
 
-    log_message "Logging setup completed"
-}
+# Add to user's crontab for automatic startup
+log "Configuring automatic startup via crontab..."
+(crontab -l 2>/dev/null | grep -v "modem-complete-start.sh"; echo "@reboot /usr/local/bin/modem-complete-start.sh") | crontab -
 
-# Configure automatic startup
-configure_startup() {
-    log_message "Configuring automatic startup..."
-    
-    # Add to user's crontab
-    sudo -u $username bash << EOF
-# Remove any existing entries
-crontab -l 2>/dev/null | grep -v "modem-complete-start.sh" | crontab -
+# ===============================================
+# STEP 5: Create Testing Tools
+# ===============================================
+echo
+echo "=========================================="
+log "🛠️ STEP 5: Create Testing Tools"
+echo "=========================================="
 
-# Add new entry
-(crontab -l 2>/dev/null; echo "@reboot /usr/local/bin/modem-complete-start.sh") | crontab -
-EOF
-
-    # Create systemd service as backup method
-    sudo tee /etc/systemd/system/sara-r5-modem.service > /dev/null << EOF
-[Unit]
-Description=SARA-R5 LTE-M Modem Initialization
-After=multi-user.target
-Wants=network.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/local/bin/modem-complete-start.sh
-StandardOutput=journal
-StandardError=journal
-User=root
-Group=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Enable the service (disabled by default, cron is primary method)
-    # systemctl enable sara-r5-modem.service
-    
-    log_message "Startup configuration completed"
-}
-
-# Create testing tools
-create_testing_tools() {
-    log_message "Creating testing and diagnostic tools..."
-    
-    # GPS testing script
-    sudo tee /usr/local/bin/test-gps.sh > /dev/null << 'EOF'
+# GPS testing script
+sudo tee /usr/local/bin/test-gps.sh > /dev/null << 'EOF'
 #!/bin/bash
 # GPS Test Script for SARA-R5
 
@@ -630,8 +476,8 @@ echo ""
 timeout 30 cat /dev/ttyGSM2 || echo "No GPS data received in 30 seconds"
 EOF
 
-    # PPP testing script
-    sudo tee /usr/local/bin/test-ppp.sh > /dev/null << 'EOF'
+# PPP testing script
+sudo tee /usr/local/bin/test-ppp.sh > /dev/null << 'EOF'
 #!/bin/bash
 # PPP Connection Test Script
 
@@ -657,8 +503,8 @@ else
 fi
 EOF
 
-    # Status script
-    sudo tee /usr/local/bin/sara-r5-status.sh > /dev/null << 'EOF'
+# Status script
+sudo tee /usr/local/bin/sara-r5-status.sh > /dev/null << 'EOF'
 #!/bin/bash
 # SARA-R5 System Status Script
 
@@ -694,6 +540,14 @@ else
     echo "✗ PPP Connection: INACTIVE"
 fi
 
+# Check I2C
+echo ""
+if [ -c /dev/i2c-1 ]; then
+    echo "✓ I2C Interface: AVAILABLE (/dev/i2c-1)"
+else
+    echo "✗ I2C Interface: NOT AVAILABLE"
+fi
+
 # Check processes
 echo ""
 echo "Related Processes:"
@@ -705,67 +559,76 @@ echo "Recent Modem Logs (last 5 lines):"
 tail -5 /var/log/modem-start.log 2>/dev/null | sed 's/^/  /' || echo "  No logs found"
 EOF
 
-    # Make scripts executable
-    sudo chmod +x /usr/local/bin/test-gps.sh
-    sudo chmod +x /usr/local/bin/test-ppp.sh
-    sudo chmod +x /usr/local/bin/sara-r5-status.sh
-    
-    log_message "Testing tools created"
-}
+# I2C testing script
+sudo tee /usr/local/bin/test-i2c.sh > /dev/null << 'EOF'
+#!/bin/bash
+# I2C Test Script for SARA-R5
 
-# Display completion message
-show_completion_message() {
-    echo ""
-    echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║         SARA-R5 Installation Complete!      ║${NC}"
-    echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
-    echo ""
-    echo -e "${YELLOW}Configuration Summary:${NC}"
-    echo "• GSM Multiplexer: gsmMuxd installed"
-    echo "• PPP Device: /dev/ttyGSM1 (cellular data)"
-    echo "• GPS Device: /dev/ttyGSM2 (GNSS data)"
-    echo "• Network Priority: Cellular first, WiFi backup"
-    echo "• APN: $APN"
-    echo "• Logs: /var/log/modem-start.log & /var/log/proscout.log"
-    echo ""
-    echo -e "${YELLOW}Available Commands:${NC}"
-    echo "• sara-r5-status.sh     - Check system status"
-    echo "• test-ppp.sh          - Test cellular connection"
-    echo "• test-gps.sh          - Test GPS functionality"
-    echo "• sudo pon             - Start PPP connection manually"
-    echo "• sudo poff            - Stop PPP connection"
-    echo ""
-    echo -e "${YELLOW}Next Steps:${NC}"
-    echo "1. Reboot the system: sudo reboot"
-    echo "2. After reboot, check status: sara-r5-status.sh"
-    echo "3. Test connectivity: test-ppp.sh"
-    echo "4. Monitor logs: tail -f /var/log/modem-start.log"
-    echo ""
-    echo -e "${RED}IMPORTANT:${NC} A reboot is required for all changes to take effect!"
-    echo ""
-}
+echo "I2C Interface Test"
+echo "=================="
 
-# Main installation process
-main() {
-    echo "Starting SARA-R5 Installation..."
-    
-    get_user_input
-    
-    log_message "Starting SARA-R5 LTE-M + GPS installation"
-    
-    install_dependencies
-    
-    configure_serial
-    configure_ppp
-    create_modem_script
-    configure_network_priority
-    setup_logging
-    configure_startup
-    create_testing_tools
-    
-    log_message "Installation completed successfully"
-    show_completion_message
-}
+if [[ ! -c /dev/i2c-1 ]]; then
+    echo "ERROR: I2C device /dev/i2c-1 not found"
+    echo "Make sure I2C is enabled: sudo raspi-config"
+    exit 1
+fi
 
-# Run main function
-main "$@"
+echo "Scanning I2C bus for devices..."
+sudo i2cdetect -y 1
+
+echo ""
+echo "Testing Python smbus import..."
+python3 -c "import smbus; print('✓ smbus imported successfully')" 2>/dev/null || echo "✗ smbus import failed"
+python3 -c "import smbus2; print('✓ smbus2 imported successfully')" 2>/dev/null || echo "✗ smbus2 import failed"
+EOF
+
+# Make scripts executable
+sudo chmod +x /usr/local/bin/test-gps.sh
+sudo chmod +x /usr/local/bin/test-ppp.sh
+sudo chmod +x /usr/local/bin/sara-r5-status.sh
+sudo chmod +x /usr/local/bin/test-i2c.sh
+
+# Test I2C after a brief wait
+sleep 2
+if [ -c /dev/i2c-1 ]; then
+    log "✅ I2C interface enabled successfully"
+    log "📍 I2C device: /dev/i2c-1 is available"
+else
+    warn "I2C device /dev/i2c-1 not found - will be available after reboot"
+fi
+
+# ===============================================
+# INSTALLATION COMPLETE
+# ===============================================
+echo
+echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║      SARA-R5 Installation Complete!         ║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${YELLOW}Configuration Summary:${NC}"
+echo "• GSM Multiplexer: gsmMuxd installed"
+echo "• PPP Device: /dev/ttyGSM0 (cellular data)"
+echo "• GPS Device: /dev/ttyGSM2 (GNSS data)"
+echo "• I2C Interface: Enabled for sensors"
+echo "• Auto-login: Enabled for user $USER"
+echo "• Network Priority: Cellular first, WiFi backup"
+echo "• APN: $APN"
+echo "• Logs: /var/log/modem-start.log"
+echo ""
+echo -e "${YELLOW}Available Commands:${NC}"
+echo "• sara-r5-status.sh     - Check system status"
+echo "• test-ppp.sh          - Test cellular connection"
+echo "• test-gps.sh          - Test GPS functionality"
+echo "• test-i2c.sh          - Test I2C interface"
+echo "• sudo pon             - Start PPP connection manually"
+echo "• sudo poff            - Stop PPP connection"
+echo ""
+echo -e "${YELLOW}Next Steps:${NC}"
+echo "1. Reboot the system: sudo reboot"
+echo "2. After reboot, check status: sara-r5-status.sh"
+echo "3. Test connectivity: test-ppp.sh"
+echo "4. Test I2C: test-i2c.sh"
+echo "5. Monitor logs: tail -f /var/log/modem-start.log"
+echo ""
+echo -e "${RED}IMPORTANT:${NC} A reboot is required for all changes to take effect!"
+echo ""
