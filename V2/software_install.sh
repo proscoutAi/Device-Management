@@ -1,6 +1,6 @@
 #!/bin/bash
 # ProScout Complete Installation Script
-# Run with: sudo bash install-proscout.sh
+# Run with: bash install-proscout.sh (NOT as root)
 
 INSTALL_DIR="/home/proscout/ProScout-master"
 DEVICE_DIR="$INSTALL_DIR/device-manager"
@@ -15,26 +15,34 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 log_message() {
-    sudo echo -e "${BLUE}$(date '+%Y-%m-%d %H:%M:%S')${NC} - $1" | tee -a "$LOGFILE"
+    echo -e "${BLUE}$(date '+%Y-%m-%d %H:%M:%S')${NC} - $1" | sudo tee -a "$LOGFILE" > /dev/null
+    echo -e "${BLUE}$(date '+%Y-%m-%d %H:%M:%S')${NC} - $1"
 }
 
 error_exit() {
-    sudo echo -e "${RED}ERROR: $1${NC}" | tee -a "$LOGFILE"
+    echo -e "${RED}ERROR: $1${NC}" | sudo tee -a "$LOGFILE" > /dev/null
+    echo -e "${RED}ERROR: $1${NC}"
     exit 1
 }
 
 success_message() {
-    sudo echo -e "${GREEN}SUCCESS: $1${NC}" | tee -a "$LOGFILE"
+    echo -e "${GREEN}SUCCESS: $1${NC}" | sudo tee -a "$LOGFILE" > /dev/null
+    echo -e "${GREEN}SUCCESS: $1${NC}"
 }
 
 warning_message() {
-    sudo echo -e "${YELLOW}WARNING: $1${NC}" | tee -a "$LOGFILE"
+    echo -e "${YELLOW}WARNING: $1${NC}" | sudo tee -a "$LOGFILE" > /dev/null
+    echo -e "${YELLOW}WARNING: $1${NC}"
 }
 
 # Check if running as root
 if [[ $EUID -eq 0 ]]; then
     error_exit "This script should not be run as root. Run as regular user with sudo privileges."
 fi
+
+# Create log file with proper permissions first
+sudo touch "$LOGFILE"
+sudo chmod 666 "$LOGFILE"
 
 log_message "=== Starting ProScout Installation ==="
 
