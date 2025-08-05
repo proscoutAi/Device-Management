@@ -19,16 +19,16 @@ log_message() {
 }
 
 error_exit() {
-    echo -e "${RED}ERROR: $1${NC}" | tee -a "$LOGFILE"
+    sudo echo -e "${RED}ERROR: $1${NC}" | tee -a "$LOGFILE"
     exit 1
 }
 
 success_message() {
-    echo -e "${GREEN}SUCCESS: $1${NC}" | tee -a "$LOGFILE"
+    sudo echo -e "${GREEN}SUCCESS: $1${NC}" | tee -a "$LOGFILE"
 }
 
 warning_message() {
-    echo -e "${YELLOW}WARNING: $1${NC}" | tee -a "$LOGFILE"
+    sudo echo -e "${YELLOW}WARNING: $1${NC}" | tee -a "$LOGFILE"
 }
 
 # Check if running as root

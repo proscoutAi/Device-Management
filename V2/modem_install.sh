@@ -533,7 +533,7 @@ fi
 EOF
 
     sudo chmod +x /usr/local/bin/network-priority.sh
-    sudo log_message "Network priority configuration created"
+    log_message "Network priority configuration created"
 }
 
 # Set up logging

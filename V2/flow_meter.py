@@ -146,7 +146,7 @@ def setup_flow_meter():
         polling_active = True
         polling_thread = threading.Thread(target=polling_monitor, daemon=True)
         polling_thread.start()
-        print("{time.ctime(time.time())}:✅ Polling monitor started")
+        print(f"{time.ctime(time.time())}:✅ Polling monitor started")
         
         # Register cleanup handlers
         atexit.register(cleanup)
