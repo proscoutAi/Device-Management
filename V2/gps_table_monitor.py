@@ -1,3 +1,9 @@
+i#!/usr/bin/env python3
+"""
+GPS Table Monitor - Display GPS data in a nice table format
+Similar to gpsmon but works with SARA-R520M10 AT commands
+"""
+
 import serial
 import time
 import re
@@ -7,7 +13,7 @@ import math
 from datetime import datetime
 
 class GPSTableMonitor:
-    def __init__(self, port='/dev/ttyGSM0', baudrate=115200):
+    def __init__(self, port='/dev/ttyGSM2', baudrate=115200):
         self.port = port
         self.baudrate = baudrate
         self.serial_conn = None
@@ -54,7 +60,7 @@ class GPSTableMonitor:
             
             while time.time() - start_time < 3:
                 if self.serial_conn.in_waiting > 0:
-                    line = self.serial_conn.readline().decode('utf-8', errors='>
+                    line = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
                     if line:
                         response += line + "\n"
                         if line == "OK" or line.startswith("ERROR"):
@@ -64,8 +70,7 @@ class GPSTableMonitor:
             return response
         except Exception as e:
             return None
-
-        
+    
     def extract_nmea(self, at_response):
         """Extract NMEA sentence from AT response"""
         if not at_response:
@@ -83,11 +88,11 @@ class GPSTableMonitor:
                 # Time
                 time_str = parts[1]
                 if len(time_str) >= 6:
-                    self.gps_data['time_utc'] = f"{time_str[:2]}:{time_str[2:4]>
+                    self.gps_data['time_utc'] = f"{time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}"
                 
                 # Status
                 status = parts[2]
-                self.gps_data['fix_status'] = 'Valid Fix' if status == 'A' else>
+                self.gps_data['fix_status'] = 'Valid Fix' if status == 'A' else 'No Fix'
                 
                 # Position
                 if status == 'A':
@@ -101,7 +106,7 @@ class GPSTableMonitor:
                         lat_deg = float(lat_str[:2]) + float(lat_str[2:]) / 60
                         if lat_dir == 'S':
                             lat_deg = -lat_deg
-                                                    
+                        
                         lon_deg = float(lon_str[:3]) + float(lon_str[3:]) / 60
                         if lon_dir == 'W':
                             lon_deg = -lon_deg
@@ -123,7 +128,7 @@ class GPSTableMonitor:
                 # Date
                 date_str = parts[9]
                 if len(date_str) >= 6:
-                    self.gps_data['date'] = f"{date_str[:2]}/{date_str[2:4]}/{d>
+                    self.gps_data['date'] = f"{date_str[:2]}/{date_str[2:4]}/{date_str[4:6]}"
                 
         except Exception as e:
             pass
@@ -137,7 +142,7 @@ class GPSTableMonitor:
                 sats_str = parts[7]
                 if sats_str:
                     self.gps_data['satellites_used'] = int(sats_str)
-                                    
+                
                 # HDOP
                 hdop_str = parts[8]
                 if hdop_str:
@@ -173,7 +178,7 @@ class GPSTableMonitor:
         ]
         
         for command, parser in commands:
-                   response = self.send_at_command(command)
+            response = self.send_at_command(command)
             if response:
                 nmea_sentence = self.extract_nmea(response)
                 if nmea_sentence:
@@ -195,39 +200,39 @@ class GPSTableMonitor:
         print()
         
         # Status section
-        print("┌─ GPS STATUS ──────────────────────────────────────────────────>
-        print(f"│ Fix Status     : {self.gps_data['fix_status']:<20} │ Last Upd>
-        print(f"│ Satellites Used: {self.gps_data['satellites_used']:<20} │ In >
-        print(f"│ HDOP          : {self.gps_data['hdop']:<20.2f} │ Quality    :>
-        print("└───────────────────────────────────────────────────────────────>
+        print("┌─ GPS STATUS ─────────────────────────────────────────────────────────────────┐")
+        print(f"│ Fix Status     : {self.gps_data['fix_status']:<20} │ Last Update: {self.gps_data['last_update']:<20} │")
+        print(f"│ Satellites Used: {self.gps_data['satellites_used']:<20} │ In View    : {self.gps_data['satellites_view']:<20} │")
+        print(f"│ HDOP          : {self.gps_data['hdop']:<20.2f} │ Quality    : {'Good' if self.gps_data['hdop'] < 3 else 'Poor':<20} │")
+        print("└──────────────────────────────────────────────────────────────────────────────┘")
         print()
         
         # Position section
-        print("┌─ POSITION ────────────────────────────────────────────────────>
-        print(f"│ Latitude       : {self.gps_data['latitude']:<20.8f} │ ({self.>
-        print(f"│ Longitude      : {self.gps_data['longitude']:<20.8f} │ ({self>
-        print(f"│ Altitude       : {self.gps_data['altitude']:<20.1f} │ meters >
-        print("└───────────────────────────────────────────────────────────────>
+        print("┌─ POSITION ───────────────────────────────────────────────────────────────────┐")
+        print(f"│ Latitude       : {self.gps_data['latitude']:<20.8f} │ ({self.deg_to_dms(self.gps_data['latitude'], 'lat'):<18}) │")
+        print(f"│ Longitude      : {self.gps_data['longitude']:<20.8f} │ ({self.deg_to_dms(self.gps_data['longitude'], 'lon'):<18}) │")
+        print(f"│ Altitude       : {self.gps_data['altitude']:<20.1f} │ meters above sea level   │")
+        print("└──────────────────────────────────────────────────────────────────────────────┘")
         print()
         
         # Movement section
-        print("┌─ MOVEMENT ────────────────────────────────────────────────────>
-        print(f"│ Speed (knots)  : {self.gps_data['speed_knots']:<20.2f} │ Spee>
-        print(f"│ Course         : {self.gps_data['course']:<20.1f} │ Direction>
-        print("└───────────────────────────────────────────────────────────────>
+        print("┌─ MOVEMENT ───────────────────────────────────────────────────────────────────┐")
+        print(f"│ Speed (knots)  : {self.gps_data['speed_knots']:<20.2f} │ Speed (km/h): {self.gps_data['speed_kmh']:<20.2f} │")
+        print(f"│ Course         : {self.gps_data['course']:<20.1f} │ Direction   : {self.course_to_direction(self.gps_data['course']):<20} │")
+        print("└──────────────────────────────────────────────────────────────────────────────┘")
         print()
         
         # Time section
-        print("┌─ TIME ────────────────────────────────────────────────────────>
-        print(f"│ UTC Time       : {self.gps_data['time_utc']:<20} │ Date      >
-        print("└───────────────────────────────────────────────────────────────>
+        print("┌─ TIME ───────────────────────────────────────────────────────────────────────┐")
+        print(f"│ UTC Time       : {self.gps_data['time_utc']:<20} │ Date        : {self.gps_data['date']:<20} │")
+        print("└──────────────────────────────────────────────────────────────────────────────┘")
         print()
         
         # Raw data section
-        print("┌─ RAW DATA ────────────────────────────────────────────────────>
-        print(f"│ Latest RMC: AT+UGRMC? (Run this command to see raw NMEA data)>
-        print(f"│ Device    : {self.port:<20} │ Baudrate    : {self.baudrate:<2>
-        print("└───────────────────────────────────────────────────────────────>
+        print("┌─ RAW DATA ───────────────────────────────────────────────────────────────────┐")
+        print(f"│ Latest RMC: AT+UGRMC? (Run this command to see raw NMEA data)               │")
+        print(f"│ Device    : {self.port:<20} │ Baudrate    : {self.baudrate:<20} │")
+        print("└──────────────────────────────────────────────────────────────────────────────┘")
         
         print("\n[Updating every 2 seconds...]")
     
@@ -245,7 +250,7 @@ class GPSTableMonitor:
             dir_char = 'N' if deg >= 0 else 'S'
         else:
             dir_char = 'E' if deg >= 0 else 'W'
-            
+        
         return f"{d:02d}°{m:02d}'{s:04.1f}\"{dir_char}"
     
     def course_to_direction(self, course):
@@ -283,9 +288,9 @@ def main():
     """Main function"""
     import argparse
     
-    parser = argparse.ArgumentParser(description='GPS Table Monitor for SARA-R5>
-    parser.add_argument('--port', default='/dev/ttyGSM0', help='GPS device port>
-    parser.add_argument('--baudrate', type=int, default=115200, help='Baud rate>
+    parser = argparse.ArgumentParser(description='GPS Table Monitor for SARA-R520M10')
+    parser.add_argument('--port', default='/dev/ttyGSM2', help='GPS device port')
+    parser.add_argument('--baudrate', type=int, default=115200, help='Baud rate')
     args = parser.parse_args()
     
     monitor = GPSTableMonitor(port=args.port, baudrate=args.baudrate)

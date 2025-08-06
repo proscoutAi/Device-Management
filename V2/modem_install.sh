@@ -71,6 +71,40 @@ echo "=========================================="
 log "🔄 Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
+# ===============================================
+# STEP 1.1: Fix DNS Resolution (Critical for downloads)
+# ===============================================
+log "🌐 Configuring DNS resolution..."
+
+# Set up reliable DNS servers
+sudo tee /etc/resolv.conf > /dev/null << 'EOF'
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+nameserver 8.8.4.4
+nameserver 1.0.0.1
+EOF
+
+# Configure NetworkManager to not overwrite DNS
+sudo mkdir -p /etc/NetworkManager/conf.d
+sudo tee /etc/NetworkManager/conf.d/dns.conf > /dev/null << EOF
+[main]
+dns=none
+EOF
+
+# Make resolv.conf immutable so nothing can overwrite it
+sudo chattr +i /etc/resolv.conf 2>/dev/null || true
+
+# Test DNS resolution
+log "🧪 Testing DNS resolution..."
+if ping -c 2 google.com &>/dev/null; then
+    log "✅ DNS resolution working"
+else
+    warn "DNS resolution may have issues - continuing anyway"
+fi
+
+# Restart NetworkManager to apply DNS changes
+sudo systemctl restart NetworkManager 2>/dev/null || true
+
 log "📦 Installing required packages..."
 sudo apt install -y ppp minicom gpsd gpsd-clients i2c-tools python3-smbus python3-smbus2 git
 
