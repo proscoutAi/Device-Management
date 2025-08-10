@@ -1,0 +1,5 @@
+V2 hardware:
+pi zero
+modem - ozzmaker SARA-R5
+GPS - DUAL Band uart
+IMU - ozzmaker i2c
