@@ -184,6 +184,12 @@ class Session:
         imu_check_counter = 0
         imu_check_interval = 10  # Check IMU health every 10 loops
         log_performance = 0 #log perfomance once a minute
+        
+        # Set session start time here when run() starts - time should be correct by now
+        if self.upload_class.session_start_time is None:
+            self.upload_class.session_start_time = datetime.now()
+            print(f"{time.ctime(time.time())}:📅 Session start time set to: {self.upload_class.session_start_time.isoformat()}")
+        
     
         while self.running:
         
@@ -214,7 +220,7 @@ class Session:
             litter_per_hour = 0
             if flow_meter_connected:
                 flow_counter = get_counter_and_reset()
-                litter_per_hour = (flow_counter/flow_meter_pulses_per_litter)/interval_in_hours
+                litter_per_hour = flow_counter/flow_meter_pulses_per_litter
             
             # Get IMU data with health checking
             imu_data = []

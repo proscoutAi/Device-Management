@@ -14,16 +14,27 @@ Left = Button(27)
 Right= Button(26)
 '''
 def main():
-    """A main function to interact with sessions"""
-
-    session = Session()
-    session.start()
-    
-    while True:
-
-      #  Blue.toggle()
-        sleep(0.2)
-
+    try:
+        print(f"{time.ctime(time.time())}: Trying to start main application!!!!!")
+        session = Session()
+        if session.start():
+            print(f"{time.ctime(time.time())}: Session started successfully")
+        else:
+            print(f"{time.ctime(time.time())}: Failed to start session")
+            return
+            
+        # Keep main thread alive and handle shutdown gracefully
+        while True:
+            sleep(1)
+            
+    except KeyboardInterrupt:
+        print(f"{time.ctime(time.time())}: Shutting down...")
+        if 'session' in locals():
+            session.end()
+    except Exception as e:
+        print(f"{time.ctime(time.time())}: Fatal error in main: {e}")
+        if 'session' in locals():
+            session.end()
         
 
 

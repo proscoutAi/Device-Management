@@ -99,7 +99,7 @@ class Session:
             litter_per_hour = 0
             if flow_meter_connected:
                 flow_counter = get_counter_and_reset()
-                litter_per_hour = (flow_counter/flow_meter_pulses_per_litter)/interval_in_hours
+                litter_per_hour = flow_counter/flow_meter_pulses_per_litter
                  
             snap_time = datetime.now()
            

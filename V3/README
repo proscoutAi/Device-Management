@@ -1,5 +1,5 @@
 V2 hardware:
 pi zero
 modem - ozzmaker SARA-R5
-GPS - DUAL Band uart
+GPS - DUAL Band USB to uart
 IMU - ozzmaker i2c

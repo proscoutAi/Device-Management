@@ -193,9 +193,16 @@ class Session:
             if self.imu_manager:
                 should_collect_data = self.imu_manager.is_active
                 if not should_collect_data:
+                    #If we are going into a sleep mode - clear session timestamp
+                    if self.upload_class.session_start_time is not None:
+                        self.upload_class.session_start_time = None
+                    
                     print(f"{time.ctime(time.time())}:IMU in sleep mode - waiting for motion...")
                     
-            if should_collect_data or not self.imu_manager:  # Collect data if no IMU manager
+            if should_collect_data or not self.imu_manager:  
+                #if we are changing from sleep mode to awake - set session timestamp
+                if self.upload_class.session_start_time is None:
+                        self.upload_class.session_start_time = datetime.now()
                 gps_data = get_gps_data()
                 if gps_data['fix_status'] == 'No Fix':
                     gps_data = {

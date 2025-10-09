@@ -76,7 +76,7 @@ class CloudFunctionClient:
         #send json to google run function
         # Send HTTP POST request
         response = requests.post(
-                f"{self.cloud_function_url}/ingest",
+                f"{self.cloud_function_url}/insert-device-data-raw",
                 json=json_txt,
                 headers={'Content-Type': 'application/json'},
                 timeout=30

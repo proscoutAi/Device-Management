@@ -28,7 +28,7 @@ class CloudFunctionClient:
         """
         self.cloud_function_url = cloud_function_url.rstrip('/')
         self.device_uuid = device_uuid
-        self.session_start_time = datetime.now()
+        self.session_start_time = None
         self.sleep_interval = sleep_interval
         self.offline_upload_sleep_interval = 600 #10 minutes between trying to upload offline data
         
