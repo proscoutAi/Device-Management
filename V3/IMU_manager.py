@@ -30,15 +30,18 @@ magXmax = 137005
 magYmax = 136892
 magZmax = 138556
 
-# Hard iron offsets
-offset_x = 130872.5
-offset_y = 132134.0
-offset_z = 131764.0
+# Hard iron offsets (center point)
+offset_x = (magXmax + magXmin) / 2.0
+offset_y = (magYmax + magYmin) / 2.0
+offset_z = (magZmax + magZmin) / 2.0
 
-# Soft iron scales
-scale_x = 0.961136023916293
-scale_y = 1.2387908084629398
-scale_z = 0.86781016882607
+# Soft iron scales (normalization)
+# Find the average range
+avg_range = ((magXmax - magXmin) + (magYmax - magYmin) + (magZmax - magZmin)) / 3.0
+
+scale_x = avg_range / (magXmax - magXmin)
+scale_y = avg_range / (magYmax - magYmin)
+scale_z = avg_range / (magZmax - magZmin)
 
 imu_buffer = []
 lock = threading.Lock()
