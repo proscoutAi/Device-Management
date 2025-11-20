@@ -38,7 +38,7 @@ batch_size = config.getint('Setup', 'batch_size')
 imu_rate_per_second = config.getint('Setup', 'imu_rate_per_second')
 interval_in_hours = sleep_interval/3600
 flow_meter_pulses_per_litter = config.getint('Setup', 'flow_meter_pulses_per_litter')
-
+imu_connected = config.getboolean('Setup', 'imu')
 executor = ThreadPoolExecutor(max_workers=3)
 
 # Read the unique identifier (UUID or MAC address)
@@ -184,17 +184,15 @@ class Session:
         imu_check_counter = 0
         imu_check_interval = 10  # Check IMU health every 10 loops
         log_performance = 0 #log perfomance once a minute
-        
         # Set session start time here when run() starts - time should be correct by now
         if self.upload_class.session_start_time is None:
-            self.upload_class.session_start_time = datetime.now()
-            print(f"{time.ctime(time.time())}:📅 Session start time set to: {self.upload_class.session_start_time.isoformat()}")
+         self.upload_class.session_start_time = datetime.now()
+         print(f"{time.ctime(time.time())}:📅 Session start time set to: {self.upload_class.session_start_time.isoformat()}")
         
-    
         while self.running:
         
             gps_data = get_gps_data()
-            if gps_data['fix_status'] == 'No Fix':
+            if gps_data is None or gps_data['fix_status'] == 'No Fix':
                 gps_data = {
                 'latitude': 0.0,
                 'longitude': 0.0,
@@ -217,14 +215,14 @@ class Session:
             elif camera_connected:
                 should_i_snap_image +=1
  
-            litter_per_hour = 0
+            litter_per_hour = 0.0
             if flow_meter_connected:
                 flow_counter = get_counter_and_reset()
                 litter_per_hour = flow_counter/flow_meter_pulses_per_litter
             
             # Get IMU data with health checking
             imu_data = []
-            if self.imu_manager:
+            if self.imu_manager and imu_connected:
                 try:
                     imu_data = self.imu_manager.get_imu_buffer_and_reset()
                     
@@ -242,7 +240,7 @@ class Session:
             
             # Periodic IMU health check
             imu_check_counter += 1
-            if imu_check_counter >= imu_check_interval:
+            if imu_check_counter >= imu_check_interval and imu_connected:
                 imu_check_counter = 0
                 if not self.check_imu_health():
                     print(f"{time.ctime(time.time())}:IMU health check failed - continuing without IMU data")
@@ -273,15 +271,18 @@ class Session:
           setup_flow_meter()
 
         # initiate IMU
-        try:
-            self.imu_manager = IMUManager(imu_rate_per_second)
-            self.imu_last_data_time = time.time()
-            print(f"{time.ctime(time.time())}:IMU initialized successfully")
-        except Exception as e:
-            print(f"{time.ctime(time.time())}:Failed to initialize IMU: {e}")
-            print(f"{time.ctime(time.time())}:Continuing without IMU data")
-            self.imu_manager = None
- 
+        if imu_connected:
+         try:
+             self.imu_manager = IMUManager(imu_rate_per_second)
+             self.imu_last_data_time = time.time()
+             print(f"{time.ctime(time.time())}:IMU initialized successfully")
+         except Exception as e:
+             print(f"{time.ctime(time.time())}:Failed to initialize IMU: {e}")
+             print(f"{time.ctime(time.time())}:Continuing without IMU data")
+             self.imu_manager = None
+        else:
+             self.imu_manager = None
+             print(f"{time.ctime(time.time())}:IMU disabled in config")
         self.start_time = datetime.now()
         
         # Initialize camera if enabled
