@@ -154,6 +154,24 @@ class IMUCalibrator:
             logging.error(f"Error reading IMU values file: {e}")
             return None
     
+    def get_current_calibration_values(self):
+        """
+        Get current calibration values from memory (not from file).
+        
+        Returns:
+            dict: Dictionary containing current calibration values with keys:
+                - 'magXmin', 'magYmin', 'magZmin'
+                - 'magXmax', 'magYmax', 'magZmax'
+        """
+        return {
+            'magXmin': self.magXmin,
+            'magYmin': self.magYmin,
+            'magZmin': self.magZmin,
+            'magXmax': self.magXmax,
+            'magYmax': self.magYmax,
+            'magZmax': self.magZmax
+        }
+    
     def _save_imu_values(self):
         """Save current max IMU values to file."""
         try:
@@ -238,7 +256,6 @@ class IMUCalibrator:
                 if self._save_imu_values():
                     logging.info("Calibration complete! Values saved.")
                     logging.info(f"Completed {self.iteration_counter} iterations with {self.change_counter} changes.")
-                    logging.info("Exiting script...")
                     return True
             else:
                 # Too many changes, reset counters and continue
@@ -286,9 +303,14 @@ class IMUCalibrator:
         return False
     
     def _skip_initial_readings(self):
-        """Discard the first few readings to stabilize the sensor and check if calibration is needed."""
+        """
+        Discard the first few readings to stabilize the sensor and check if calibration is needed.
+        
+        Returns:
+            False if calibration is not needed, None otherwise (continues with calibration).
+        """
         if not self.skip_initial_readings:
-            return
+            return None
         
         for _ in range(self.INITIAL_SKIP_READINGS):
             IMU.readMAGx()
@@ -313,10 +335,11 @@ class IMUCalibrator:
         if self.calibration_needed:
             logging.info("Starting calibration - LED will blink during calibration")
             self._start_led_blinking()
+            return None  # Continue with calibration
         else:
-            logging.info("Calibration not needed. Exiting.")
+            logging.info("Calibration not needed.")
             self._stop_led_blinking()
-            sys.exit(0)
+            return False  # Signal that calibration was not needed
     
     def _update_min_max_values(self, MAGx, MAGy, MAGz):
         """Update min/max magnetometer values."""
@@ -334,7 +357,15 @@ class IMUCalibrator:
             self.magZmin = MAGz
     
     def run(self):
-        """Run the calibration process."""
+        """
+        Run the calibration process.
+        
+        Returns:
+            dict: Dictionary containing calibration values with keys:
+                - 'magXmin', 'magYmin', 'magZmin'
+                - 'magXmax', 'magYmax', 'magZmax'
+            Returns None if calibration was not needed (values already good).
+        """
         # Initialize IMU
         IMU.detectIMU()
         IMU.initIMU()
@@ -346,7 +377,11 @@ class IMUCalibrator:
         while True:
             try:
                 # Skip initial readings on first iteration
-                self._skip_initial_readings()
+                calibration_not_needed = self._skip_initial_readings()
+                
+                # If calibration is not needed, return existing values
+                if calibration_not_needed is False:
+                    return self._load_imu_values()
                 
                 # Read magnetometer values
                 MAGx = IMU.readMAGx()
@@ -364,7 +399,8 @@ class IMUCalibrator:
                 
                 # Check if calibration is complete
                 if self._check_calibration_complete():
-                    sys.exit(0)
+                    # Return the calibration values
+                    return self.get_current_calibration_values()
                 
                 # Log current values
                 logging.debug(
