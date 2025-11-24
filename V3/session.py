@@ -8,7 +8,7 @@ import psutil
 from camera import Camera
 from upload import CloudFunctionClient 
 from concurrent.futures import ThreadPoolExecutor
-from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter
+from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter,convert_pulses_to_litters
 import configparser
 import os
 from gps_manager import get_gps_data
@@ -218,7 +218,8 @@ class Session:
             litter_per_hour = 0.0
             if flow_meter_connected:
                 flow_counter = get_counter_and_reset()
-                litter_per_hour = flow_counter/flow_meter_pulses_per_litter
+                litter_per_hour = convert_pulses_to_litters(flow_counter)
+                
             
             # Get IMU data with health checking
             imu_data = []
