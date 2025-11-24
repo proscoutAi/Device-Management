@@ -14,6 +14,14 @@ cleanup_done = False
 polling_thread = None
 polling_active = False
 
+
+
+
+def convert_pulses_to_litters(pulse_count):
+    if pulse_count == 0:
+        return 0
+    return 64.89 * pulse_count**0.648
+
 def pulse_callback(chip_id, gpio, level, timestamp):
     global pulse_count
     
