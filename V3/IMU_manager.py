@@ -1,17 +1,17 @@
 import math
-from threading import Thread
 import threading
+from threading import Thread
+
 import smbus
+
 bus = smbus.SMBus(1)
 
+import sys
+import time
+
+import calibrate.IMU_calibration as imu_calibration
 from LSM6DSL import *
 from MMC5983MA import *
-import time
-import sys
-#import board
-#import busio
-#from adafruit_bmp3xx import BMP3XX_I2C
-
 
 RAD_TO_DEG = 57.29578
 M_PI = 3.14159265358979323846
@@ -22,32 +22,37 @@ MMC5983MA_offset = 131072.0
 acc_sensitivity = 0.244 / 1000  # 0.000244 g per LSB
 gyro_sensativity = 0.07 #°/s per LSB
 
-# NEW CALIBRATION VALUES FROM YOUR CALIBRATION RUN
-magXmin = 124740
-magYmin = 127376
-magZmin = 124972
-magXmax = 137005
-magYmax = 136892
-magZmax = 138556
 
-# Hard iron offsets (center point)
-offset_x = (magXmax + magXmin) / 2.0
-offset_y = (magYmax + magYmin) / 2.0
-offset_z = (magZmax + magZmin) / 2.0
-
-# Soft iron scales (normalization)
-# Find the average range
-avg_range = ((magXmax - magXmin) + (magYmax - magYmin) + (magZmax - magZmin)) / 3.0
-
-scale_x = avg_range / (magXmax - magXmin)
-scale_y = avg_range / (magYmax - magYmin)
-scale_z = avg_range / (magZmax - magZmin)
 
 imu_buffer = []
 lock = threading.Lock()
 
 class IMUManager:
     def __init__(self,imu_rate_per_second):
+        
+        IMUCalibrator = imu_calibration.IMUCalibrator()
+        imu_values = IMUCalibrator.run()
+                
+        # NEW CALIBRATION VALUES FROM YOUR CALIBRATION RUN
+        magXmin = imu_values.get('magXmin', 124740)
+        magYmin = imu_values.get('magYmin', 127376)
+        magZmin = imu_values.get('magZmin', 124972)
+        magXmax = imu_values.get('magXmax', 137005)
+        magYmax = imu_values.get('magYmax', 136892)
+        magZmax = imu_values.get('magZmax', 138556)
+
+        # Hard iron offsets (center point)
+        self.offset_x = (magXmax + magXmin) / 2.0
+        self.offset_y = (magYmax + magYmin) / 2.0
+        self.offset_z = (magZmax + magZmin) / 2.0
+
+        # Soft iron scales (normalization)
+        # Find the average range
+        avg_range = ((magXmax - magXmin) + (magYmax - magYmin) + (magZmax - magZmin)) / 3.0
+
+        self.scale_x = avg_range / (magXmax - magXmin)
+        self.scale_y = avg_range / (magYmax - magYmin)
+        self.scale_z = avg_range / (magZmax - magZmin)
         
         self.detectIMU()
          #initialise the accelerometer
@@ -216,10 +221,10 @@ class IMUManager:
                 MAGx_raw = mag_l << 10 | mag_h << 2 | (mag_xyz & 0b11000000) >> 6
                 
                 # Apply hard iron correction (remove offset)
-                MAGx_corrected = MAGx_raw - offset_x
+                MAGx_corrected = MAGx_raw - self.offset_x
                 
                 # Apply soft iron correction (scale normalization)
-                MAGx_scaled = MAGx_corrected * scale_x
+                MAGx_scaled = MAGx_corrected * self.scale_x
                 
                 # Convert to final units (gauss or tesla)
                 MAGx_final = MAGx_scaled * (mRes)
@@ -242,10 +247,10 @@ class IMUManager:
                 MAGy_raw = mag_l << 10 | mag_h <<2 | (mag_xyz & 0b00110000) >> 4
                 
                 # Apply hard iron correction (remove offset)
-                MAGy_corrected = MAGy_raw - offset_y
+                MAGy_corrected = MAGy_raw - self.offset_y
                 
                 # Apply soft iron correction (scale normalization)
-                MAGy_scaled = MAGy_corrected * scale_y
+                MAGy_scaled = MAGy_corrected * self.scale_y
                 
                 # Convert to final units (gauss or tesla)
                 MAGy_final = MAGy_scaled * (mRes)
@@ -268,10 +273,10 @@ class IMUManager:
                 MAGz_raw = mag_l << 10 | mag_h <<2 | (mag_xyz & 0b00001100) >> 2
                 
                 # Apply hard iron correction (remove offset)
-                MAGz_corrected = MAGz_raw - offset_z
+                MAGz_corrected = MAGz_raw - self.offset_z
                 
                 # Apply soft iron correction (scale normalization)
-                MAGz_scaled = MAGz_corrected * scale_z
+                MAGz_scaled = MAGz_corrected * self.scale_z
                 
                 # Convert to final units (gauss or tesla)
                 MAGz_final = MAGz_scaled * (mRes)
