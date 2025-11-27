@@ -85,7 +85,7 @@ class CloudFunctionClient:
 
                 # Send HTTP POST request
                 response = self.session.post(
-                    f"{self.cloud_function_url}/ingest",
+                    f"{self.cloud_function_url}/insert-device-data-raw",
                     data=compressed_data,
                     headers={
                         'Content-Type': 'application/json',
@@ -211,7 +211,7 @@ class CloudFunctionClient:
                                 })
                                 
                                 response = offline_session.post(
-                                    f"{self.cloud_function_url}/ingest",
+                                    f"{self.cloud_function_url}/insert-device-data-raw",
                                     data=compressed_data,
                                     timeout=30
                                 )

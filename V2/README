@@ -3,3 +3,14 @@ pi zero
 modem - ozzmaker SARA-R5
 GPS - ozzmaker SARA-R5
 IMU - ozzmaker SARA-R5 on i2c
+
+
+Startup working script:
+sara_r5_startup.sh
+
+precondition: installation of Multiplexing gsmMuxd from ozzmaker git according to ozzmaker manual:
+https://ozzmaker.com/how-to-enable-multiplexing-on-the-raspberry-pi-serial-interface/
+
+the script should be run from crontab:
+by adding:
+@reboot /home/proscout/sara_r5_startup.sh

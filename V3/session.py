@@ -218,7 +218,7 @@ class Session:
             litter_per_hour = 0.0
             if flow_meter_connected:
                 flow_counter = get_counter_and_reset()
-                litter_per_hour = convert_pulses_to_litters(flow_counter)
+                litter_per_hour = flow_counter / flow_meter_pulses_per_litter
                 
             
             # Get IMU data with health checking
