@@ -30,8 +30,10 @@ lock = threading.Lock()
 class IMUManager:
     def __init__(self,imu_rate_per_second):
         
+        print(f"{time.ctime(time.time())}:IMU initialized successfully")
         IMUCalibrator = imu_calibration.IMUCalibrator()
         imu_values = IMUCalibrator.run()
+        print(f"{time.ctime(time.time())}:IMU initialized successfully")
                 
         # NEW CALIBRATION VALUES FROM YOUR CALIBRATION RUN
         magXmin = imu_values.get('magXmin', 124740)

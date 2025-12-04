@@ -32,13 +32,13 @@ class IMUCalibrator:
     """Calibrates IMU compass by tracking min/max magnetometer values."""
     
     # Calibration constants
-    ITERATION_THRESHOLD = 150
+    ITERATION_THRESHOLD = 300
     MAX_CHANGES_ALLOWED = 5
     INITIAL_SKIP_READINGS = 10
     TOLERANCE = 100
     LOOP_DELAY = 0.03
     
-    def __init__(self, save_path, led_gpio=None):
+    def __init__(self, save_path='IMU_values', led_gpio=None):
         """
         Initialize the IMU calibrator.
         
@@ -183,7 +183,7 @@ class IMUCalibrator:
                 f.write(f"magXmax = {self.magXmax}\n")
                 f.write(f"magYmax = {self.magYmax}\n")
                 f.write(f"magZmax = {self.magZmax}\n")
-            logging.info(f"Calibration values saved to {self.save_path}")
+            print(f"{time.ctime(time.time())}:Calibration values saved to {self.save_path}")
             return True
         except Exception as e:
             logging.error(f"Error saving IMU values file: {e}")
@@ -206,7 +206,7 @@ class IMUCalibrator:
         saved_values = self._load_imu_values()
         
         if saved_values:
-            logging.info("Loaded previous calibration values from file")
+            print(f"{time.ctime(time.time())}:Loaded previous calibration values from file")
             logging.debug(f"  magXmin = {saved_values.get('magXmin', 'N/A')}")
             logging.debug(f"  magYmin = {saved_values.get('magYmin', 'N/A')}")
             logging.debug(f"  magZmin = {saved_values.get('magZmin', 'N/A')}")
@@ -255,12 +255,12 @@ class IMUCalibrator:
             if self.change_counter <= self.MAX_CHANGES_ALLOWED:
                 self._stop_led_blinking()
                 if self._save_imu_values():
-                    logging.info("Calibration complete! Values saved.")
-                    logging.info(f"Completed {self.iteration_counter} iterations with {self.change_counter} changes.")
+                    print(f"{time.ctime(time.time())}:Calibration complete! Values saved.")
+                    print(f"{time.ctime(time.time())}:Completed {self.iteration_counter} iterations with {self.change_counter} changes.")
                     return True
             else:
                 # Too many changes, reset counters and continue
-                logging.info(f"Too many changes ({self.change_counter} > {self.MAX_CHANGES_ALLOWED}). Resetting and continuing...")
+                print(f"{time.ctime(time.time())}:Too many changes ({self.change_counter} > {self.MAX_CHANGES_ALLOWED}). Resetting and continuing...")
                 self.iteration_counter = 0
                 self.change_counter = 0
                 # Reset last values to current values to start fresh
@@ -279,7 +279,7 @@ class IMUCalibrator:
         
         # If no saved values exist, calibration is needed (first time)
         if not saved_values:
-            logging.info("No previous calibration values found. Calibration needed.")
+            print(f"{time.ctime(time.time())}:No previous calibration values found. Calibration needed.")
             return True
         
         # Check if current readings are outside the saved range (with tolerance)
@@ -297,10 +297,10 @@ class IMUCalibrator:
         )
         
         if outside_range:
-            logging.info("Values differ from saved calibration values. Calibration needed.")
+            print(f"{time.ctime(time.time())}:Values differ from saved calibration values. Calibration needed.")
             return True
         
-        logging.info("Current values are within saved calibration range. Calibration not needed.")
+        print(f"{time.ctime(time.time())}:Current values are within saved calibration range. Calibration not needed.")
         return False
     
     def _skip_initial_readings(self):
@@ -321,7 +321,7 @@ class IMUCalibrator:
         self.skip_initial_readings = False
         
         # Turn LED solid while checking if calibration is needed
-        logging.info("Checking if calibration is needed...")
+        print(f"{time.ctime(time.time())}:Checking if calibration is needed...")
         self._turn_led_solid()
         
         # Read values after skip and check if calibration is needed
@@ -334,11 +334,11 @@ class IMUCalibrator:
         
         # Handle LED based on calibration need
         if self.calibration_needed:
-            logging.info("Starting calibration - LED will blink during calibration")
+            print(f"{time.ctime(time.time())}:Starting calibration - LED will blink during calibration")
             self._start_led_blinking()
             return None  # Continue with calibration
         else:
-            logging.info("Calibration not needed.")
+            print(f"{time.ctime(time.time())}:Calibration not needed.")
             self._stop_led_blinking()
             return False  # Signal that calibration was not needed
     
@@ -367,6 +367,7 @@ class IMUCalibrator:
                 - 'magXmax', 'magYmax', 'magZmax'
             Returns None if calibration was not needed (values already good).
         """
+        print(f"{time.ctime(time.time())}:Starting IMU calibration...")
         # Initialize IMU
         IMU.detectIMU()
         IMU.initIMU()
