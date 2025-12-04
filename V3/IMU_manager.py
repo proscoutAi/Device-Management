@@ -33,8 +33,10 @@ lock = threading.Lock()
 class IMUManager:
     def __init__(self,imu_rate_per_second):
         
+        print(f"{time.ctime(time.time())}:IMU initialized successfully")
         IMUCalibrator = imu_calibration.IMUCalibrator()
         imu_values = IMUCalibrator.run()
+        print(f"{time.ctime(time.time())}:IMU initialized successfully")
                 
         # NEW CALIBRATION VALUES FROM YOUR CALIBRATION RUN
         magXmin = imu_values.get('magXmin', 124740)
@@ -180,10 +182,10 @@ class IMUManager:
         MAGx_raw = mag_l << 10 | mag_h << 2 | (mag_xyz & 0b11000000) >> 6
         
         # Apply hard iron correction (remove offset)
-        MAGx_corrected = MAGx_raw - offset_x
+        MAGx_corrected = MAGx_raw - self.offset_x
         
         # Apply soft iron correction (scale normalization)
-        MAGx_scaled = MAGx_corrected * scale_x
+        MAGx_scaled = MAGx_corrected * self.scale_x
         
         # Convert to final units (gauss or tesla)
         MAGx_final = MAGx_scaled * (mRes)
