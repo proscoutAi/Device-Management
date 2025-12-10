@@ -1,18 +1,19 @@
-from datetime import datetime
+import configparser
 import gzip
+import json
 import os
-from threading import Thread
+import sys
 import time
+from datetime import datetime
+from threading import Thread
 
 import cv2
-from numpy import ndarray
-import json
-import sys
-import configparser
-
 import requests
+from button_led_manager import ButtonLEDManager, LEDColor
+from numpy import ndarray
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
@@ -26,6 +27,7 @@ class CloudFunctionClient:
             device_uuid: Your device's UUID
             enable_camera: Whether to initialize camera for image capture
         """
+        self.led_manager = ButtonLEDManager()
         self.cloud_function_url = cloud_function_url.rstrip('/')
         self.device_uuid = device_uuid
         self.session_start_time = None
@@ -143,6 +145,7 @@ class CloudFunctionClient:
         
     def save_to_disk(self, data):
         """Save data to local disk when upload fails"""
+        self.led_manager.blink(LEDColor.RED, 500)
         try:
             # Create offline data directory if it doesn't exist
             offline_dir = "/home/proscout/offline_data"
