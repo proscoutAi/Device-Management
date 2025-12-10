@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 
-from gpiozero import LED
+from button_led_manager import ButtonLEDManager, LEDColor
 
 from . import IMU
 
@@ -33,33 +33,22 @@ class IMUCalibrator:
     
     # Calibration constants
     ITERATION_THRESHOLD = 300
+    led_manager = ButtonLEDManager()
+    # Calibration constants
+    ITERATION_THRESHOLD = 150
     MAX_CHANGES_ALLOWED = 5
     INITIAL_SKIP_READINGS = 10
     TOLERANCE = 100
     LOOP_DELAY = 0.03
     
-    def __init__(self, save_path='IMU_values', led_gpio=None):
+    def __init__(self, save_path='IMU_values'):
         """
         Initialize the IMU calibrator.
         
         Args:
             save_path (str): Path where to save the IMU calibration values
-            led_gpio (int, optional): GPIO pin number for LED. If None, LED is not used.
         """
         self.save_path = save_path
-        self.led_gpio = led_gpio
-        self.led = None
-        self.blink_thread = None
-        self.blink_stop_event = threading.Event()
-        
-        # Initialize LED if GPIO is provided and turn it on solid at startup
-        if self.led_gpio is not None:
-            try:
-                self.led = LED(self.led_gpio)
-                self.led.on()  # Turn LED on solid when script starts
-            except Exception as e:
-                logging.warning(f"Failed to initialize LED on GPIO {self.led_gpio}: {e}")
-                self.led = None
         
         # Track if calibration is needed
         self.calibration_needed = False
@@ -87,55 +76,6 @@ class IMUCalibrator:
         
         # Setup signal handler
         signal.signal(signal.SIGINT, self._handle_ctrl_c)
-    
-    def _blink_led_continuously(self):
-        """Continuously blink LED until stop event is set."""
-        if self.led is None:
-            return
-        
-        while not self.blink_stop_event.is_set():
-            self.led.on()
-            time.sleep(0.1)
-            if not self.blink_stop_event.is_set():
-                self.led.off()
-                time.sleep(0.1)
-    
-    def _turn_led_solid(self):
-        """Turn LED on solid (stop blinking if active)."""
-        if self.led is None:
-            return
-        
-        # Stop blinking if active
-        if self.blink_thread and self.blink_thread.is_alive():
-            self.blink_stop_event.set()
-            self.blink_thread.join(timeout=0.5)
-        
-        # Turn LED on solid
-        self.led.on()
-    
-    def _start_led_blinking(self):
-        """Start LED blinking in a separate thread."""
-        if self.led is None:
-            return
-        
-        # Stop any solid state first
-        if self.blink_thread and self.blink_thread.is_alive():
-            self.blink_stop_event.set()
-            self.blink_thread.join(timeout=0.5)
-        
-        self.blink_stop_event.clear()
-        self.blink_thread = threading.Thread(target=self._blink_led_continuously, daemon=True)
-        self.blink_thread.start()
-    
-    def _stop_led_blinking(self):
-        """Stop LED blinking and turn off LED."""
-        if self.led is None:
-            return
-        
-        if self.blink_thread and self.blink_thread.is_alive():
-            self.blink_stop_event.set()
-            self.blink_thread.join(timeout=0.5)
-        self.led.off()
     
     def _load_imu_values(self):
         """Load IMU calibration values from file if it exists."""
@@ -198,7 +138,7 @@ class IMUCalibrator:
         logging.debug("magYmax = %i" % (self.magYmax))
         logging.debug("magZmax = %i" % (self.magZmax))
         
-        self._stop_led_blinking()
+        self.led_manager.turn_off()
         sys.exit(130)  # 130 is standard exit code for ctrl-c
     
     def _initialize_values(self):
@@ -253,14 +193,14 @@ class IMUCalibrator:
         """Check if calibration is complete based on iteration and change thresholds."""
         if self.iteration_counter >= self.ITERATION_THRESHOLD:
             if self.change_counter <= self.MAX_CHANGES_ALLOWED:
-                self._stop_led_blinking()
                 if self._save_imu_values():
                     print(f"{time.ctime(time.time())}:Calibration complete! Values saved.")
                     print(f"{time.ctime(time.time())}:Completed {self.iteration_counter} iterations with {self.change_counter} changes.")
+                    self.led_manager.turn_off()
                     return True
             else:
                 # Too many changes, reset counters and continue
-                print(f"{time.ctime(time.time())}:Too many changes ({self.change_counter} > {self.MAX_CHANGES_ALLOWED}). Resetting and continuing...")
+                logging.info(f"Too many changes ({self.change_counter} > {self.MAX_CHANGES_ALLOWED}). Resetting and continuing...")
                 self.iteration_counter = 0
                 self.change_counter = 0
                 # Reset last values to current values to start fresh
@@ -322,7 +262,6 @@ class IMUCalibrator:
         
         # Turn LED solid while checking if calibration is needed
         print(f"{time.ctime(time.time())}:Checking if calibration is needed...")
-        self._turn_led_solid()
         
         # Read values after skip and check if calibration is needed
         MAGx = IMU.readMAGx()
@@ -335,11 +274,10 @@ class IMUCalibrator:
         # Handle LED based on calibration need
         if self.calibration_needed:
             print(f"{time.ctime(time.time())}:Starting calibration - LED will blink during calibration")
-            self._start_led_blinking()
+            self.led_manager.blink(LEDColor.GREEN, 500)
             return None  # Continue with calibration
         else:
             print(f"{time.ctime(time.time())}:Calibration not needed.")
-            self._stop_led_blinking()
             return False  # Signal that calibration was not needed
     
     def _update_min_max_values(self, MAGx, MAGy, MAGz):
@@ -430,21 +368,7 @@ def main():
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     parser.add_argument('--save-path', type=str, default='IMU_values', 
                        help='Path where to save IMU calibration values (default: IMU_values)')
-    
-    def parse_led_gpio(value):
-        """Parse LED GPIO argument, allowing None to disable LED."""
-        if str(value).lower() == 'none':
-            return None
-        try:
-            return int(value)
-        except ValueError:
-            raise argparse.ArgumentTypeError(f"LED GPIO must be an integer or 'None', got: {value}")
-    
-    parser.add_argument('--led-gpio', type=parse_led_gpio, default=21,
-                       help='GPIO pin number for LED (default: 21, use --led-gpio None to disable)')
     args = parser.parse_args()
-    
-    led_gpio = args.led_gpio
     
     # Setup logging
     log_level = logging.DEBUG if args.debug else logging.INFO
@@ -454,7 +378,7 @@ def main():
     )
     
     # Create and run calibrator
-    calibrator = IMUCalibrator(save_path=args.save_path, led_gpio=led_gpio)
+    calibrator = IMUCalibrator(save_path=args.save_path)
     calibrator.run()
 
 
