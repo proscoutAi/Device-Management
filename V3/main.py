@@ -1,9 +1,12 @@
-from session import Session
-import uuid
-from gpiozero import LED,Button
-from time import sleep
-import time
 import sys
+import time
+import uuid
+from time import sleep
+
+from gpiozero import LED, Button
+from leds_manager import LedsManagerService
+from session import Session
+
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
@@ -14,13 +17,16 @@ Left = Button(27)
 Right= Button(26)
 '''
 def main():
+    led_manager = LedsManagerService()
     try:
         print(f"{time.ctime(time.time())}: Trying to start main application!!!!!")
         session = Session()
         if session.start():
             print(f"{time.ctime(time.time())}: Session started successfully")
+            led_manager.start_running()
         else:
             print(f"{time.ctime(time.time())}: Failed to start session")
+            led_manager.stop_running()
             return
             
         # Keep main thread alive and handle shutdown gracefully
