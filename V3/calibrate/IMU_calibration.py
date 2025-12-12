@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 
-from button_led_manager import ButtonLEDManager, LEDColor
+from leds_manager import LedsManagerService
 
 from . import IMU
 
@@ -33,7 +33,7 @@ class IMUCalibrator:
     
     # Calibration constants
     ITERATION_THRESHOLD = 300
-    led_manager = ButtonLEDManager()
+    led_manager_service = LedsManagerService()
     # Calibration constants
     ITERATION_THRESHOLD = 150
     MAX_CHANGES_ALLOWED = 5
@@ -138,7 +138,6 @@ class IMUCalibrator:
         logging.debug("magYmax = %i" % (self.magYmax))
         logging.debug("magZmax = %i" % (self.magZmax))
         
-        self.led_manager.turn_off()
         sys.exit(130)  # 130 is standard exit code for ctrl-c
     
     def _initialize_values(self):
@@ -196,7 +195,7 @@ class IMUCalibrator:
                 if self._save_imu_values():
                     print(f"{time.ctime(time.time())}:Calibration complete! Values saved.")
                     print(f"{time.ctime(time.time())}:Completed {self.iteration_counter} iterations with {self.change_counter} changes.")
-                    self.led_manager.turn_off()
+                    self.led_manager_service.stop_calibrate()
                     return True
             else:
                 # Too many changes, reset counters and continue
@@ -274,7 +273,7 @@ class IMUCalibrator:
         # Handle LED based on calibration need
         if self.calibration_needed:
             print(f"{time.ctime(time.time())}:Starting calibration - LED will blink during calibration")
-            self.led_manager.blink(LEDColor.GREEN, 500)
+            self.led_manager_service.start_calibrate()
             return None  # Continue with calibration
         else:
             print(f"{time.ctime(time.time())}:Calibration not needed.")
