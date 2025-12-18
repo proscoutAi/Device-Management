@@ -69,21 +69,7 @@ class ButtonLEDManager:
         self.blink_event = None
         self.blink_lock = threading.Lock()
         
-        # Turn on green LED as default state
-        self._turn_on_green_default()
-        
         self._initialized = True
-    
-    def _turn_on_green_default(self):
-        """Turn on green LED as default/standby state."""
-        try:
-            # Turn off all LEDs first
-            for led in self.leds.values():
-                led.off()  # off() sets HIGH when active_high=False
-            # Turn on green LED (default state)
-            self.leds[LEDColor.GREEN].on()  # on() sets LOW when active_high=False
-        except Exception as e:
-            print(f"{time.ctime(time.time())}:ButtonLEDManager: Error setting green LED default: {e}")
     
     def _turn_off_green(self):
         """Turn off green LED."""

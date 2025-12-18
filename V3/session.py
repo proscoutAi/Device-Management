@@ -14,7 +14,7 @@ from camera import Camera
 from flow_meter import cleanup, get_counter_and_reset, setup_flow_meter
 from gps_manager import get_gps_data
 from IMU_manager import IMUManager
-from leds_manager import LedsManagerService
+from leds_manager import GPSState, IMUState, LedsManagerService
 from upload import CloudFunctionClient
 
 sys.stdout.reconfigure(line_buffering=True)
@@ -194,12 +194,9 @@ class Session:
         
             gps_data = get_gps_data()
             if gps_data is None or gps_data['fix_status'] == 'No Fix':
-                self.led_manager_service.set_gps_offline()
-                print(f"{time.ctime(time.time())}:GPS data is offline. Details: {gps_data}")
-                fix_status = gps_data['fix_status'] if gps_data and 'fix_status' in gps_data else 'Unknown'
+                self.led_manager_service.set_gps_state(GPSState.NO_FIX)
                 satellites = gps_data['satellites'] if gps_data and 'satellites' in gps_data else 'Unknown'
                 fix_quality = gps_data['fix_quality'] if gps_data and 'fix_quality' in gps_data else 'Unknown'
-                print(f"{time.ctime(time.time())}:Fix Status: {fix_status}, Satellites: {satellites}, Fix Quality: {fix_quality}")
                 gps_data = {
                     'latitude': 0.0,
                     'longitude': 0.0,
@@ -213,7 +210,7 @@ class Session:
                     'fix_status': 'No Fix'
                 }
             else:
-                self.led_manager_service.set_gps_online()
+                self.led_manager_service.set_gps_state(GPSState.ONLINE)
         
         
             #print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
@@ -243,10 +240,12 @@ class Session:
                         if self.imu_restart_attempts > 0:
                             print(f"{time.ctime(time.time())}:IMU data flowing normally again")
                             self.imu_restart_attempts = 0
+                        self.led_manager_service.set_imu_state(IMUState.ONLINE)
                     
                 except Exception as e:
                     print(f"{time.ctime(time.time())}:Error getting IMU data: {e}")
                     imu_data = []
+                    self.led_manager_service.set_imu_state(IMUState.ERROR)
             
             # Periodic IMU health check
             imu_check_counter += 1
@@ -318,7 +317,6 @@ class Session:
 
         @return: True if the session was ended, False if the session was not running
         """
-        self.led_manager_service.stop_running()
         if not self.running:
             return False
 

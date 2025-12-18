@@ -43,6 +43,27 @@ class LedsManager:
         print(f"{time.ctime(time.time())}:Turning off LED")
         self._send_command(b"off\n")
         
+class SystemState(Enum):
+    ON = "on"
+    BOOTING = "booting"
+    MALFUNCTIONING = "malfunctioning"    
+class GPSState(Enum):
+    ONLINE = "online"
+    NO_FIX = "no_fix"
+    
+class CellularState(Enum):
+    ONLINE = "online"
+    NO_SIGNAL = "no_signal"
+    
+class IMUState(Enum):
+    ONLINE = "online"
+    CALIBRATING = "calibrating"
+    ERROR = "error"
+    
+class BatteryState():
+    def __init__(self):
+        self.charging = False
+        self.level = 0
         
 class LedsManagerService:
     _instance = None
@@ -62,90 +83,73 @@ class LedsManagerService:
         with LedsManagerService._lock:
             if LedsManagerService._initialized:
                 return
-            self.running = False
-            self.calibrate = False
-            self.gps_online = True
-            self.cellular_online = True
-            self.charging = 0 # 0-10 if zero not charging, 10 fully, faster blinking closer to finish.
+            self.system_state = SystemState.BOOTING
+            self.gps_state = GPSState.NO_FIX
+            self.cellular_state = CellularState.NO_SIGNAL
+            self.imu_state = IMUState.ERROR
+            self.battery_state = BatteryState()
             self.leds_manager = LedsManager()
             LedsManagerService._initialized = True
-        
-    def start_running(self):
-        if not self.running:
-            self.running = True
+            
+    def set_system_state(self, state: SystemState):
+        if self.system_state != state:
+            self.system_state = state
             self._update_leds()
-        self._print_state()
-        
-    def stop_running(self):
-        if not self.running:
-            self.running = False
+            
+    def set_gps_state(self, state: GPSState):
+        if self.gps_state != state:
+            self.gps_state = state
             self._update_leds()
-        self._print_state()
-        
-    def start_calibrate(self):
-        if not self.calibrate:
-            self.calibrate = True
+            
+    def set_cellular_state(self, state: CellularState):
+        if self.cellular_state != state:
+            self.cellular_state = state
             self._update_leds()
-        self._print_state()
-        
-    def stop_calibrate(self):
-        if self.calibrate:
-            self.calibrate = False
+            
+    def set_imu_state(self, state: IMUState):
+        if self.imu_state != state:
+            self.imu_state = state
             self._update_leds()
-        self._print_state()
-        
-    def set_gps_online(self):
-        if not self.gps_online:
-            self.gps_online = True
+            
+    def set_charging(self, charging: int):
+        if self.charging != charging:
+            self.charging = charging
             self._update_leds()
-        self._print_state()
-        
-    def set_gps_offline(self):
-        if self.gps_online:
-            self.gps_online = False
-            self._update_leds()
-        self._print_state()
-        
-    def set_cellular_online(self):
-        if not self.cellular_online:
-            self.cellular_online = True
-            self._update_leds()
-        self._print_state()
-        
-    def set_cellular_offline(self):
-        if self.cellular_online:
-            self.cellular_online = False
-            self.offline = True
-            self._update_leds()
-        self._print_state()
-        
-    def start_charging(self, charging_percentage: int):
-        if self.charging != charging_percentage:
-            self.charging = charging_percentage
-            self._update_leds()
-            self._print_state()
-        
-    def stop_charging(self):
-        if self.charging != 0:
-            self.charging = 0
-            self._update_leds()
-            self._print_state()
         
     def _update_leds(self):
-        if self.calibrate:
-            self.leds_manager.blink(LEDColor.GREEN, 500)
-        elif not self.gps_online:
-            self.leds_manager.blink(LEDColor.RED, 500)
-        elif not self.cellular_online:
-            self.leds_manager.blink(LEDColor.RED, 500)
-        elif self.charging == 10:
-            self.leds_manager.turn_on(LEDColor.Blue)
-        elif self.charging > 0:
-            self.leds_manager.blink(LEDColor.BLUE, (10 - self.charging) * 100)
-        elif self.running:
+        if self.system_state == SystemState.BOOTING:
+            self.leds_manager.blink(LEDColor.RED, 1000)
+        elif self.imu_state == IMUState.CALIBRATING:
+            self.leds_manager.blink(LEDColor.GREEN, 100)
+        elif self.system_state == SystemState.MALFUNCTIONING:
+            self.leds_manager.turn_on(LEDColor.RED)
+        elif self.imu_state == IMUState.ERROR:
+            self.leds_manager.turn_on(LEDColor.RED)
+        elif self.gps_state == GPSState.NO_FIX:
+            self.leds_manager.blink(LEDColor.RED, 100)
+        elif self.cellular_state == CellularState.NO_SIGNAL:
+            self.leds_manager.blink(LEDColor.GREEN, 1000)
+        elif self.system_state == SystemState.ON:
             self.leds_manager.turn_on(LEDColor.GREEN)
+        elif self.battery_state.charging:
+            # Blink the LED by battery level: 1000ms (empty) to 100ms (full); solid blue at full charge
+            level = self.battery_state.level
+            if level >= 100:
+                self.leds_manager.turn_on(LEDColor.BLUE)
+            else:
+                blink_ms = int(1000 - (900 * min(max(level, 0), 100) / 100))
+                self.leds_manager.blink(LEDColor.BLUE, blink_ms)
         else:
             self.leds_manager.turn_on(LEDColor.RED)
+        self._print_state()
             
     def _print_state(self):
-        print(f"{time.ctime(time.time())}:LedsManagerService state: running={self.running}, calibrate={self.calibrate}, gps={self.gps_online}, cellular={self.cellular_online}, charging={self.charging}")
+        print(f"{time.ctime(time.time())}: LedsManagerService state: "
+              f"system_state={self.system_state}, "
+              f"imu_state={self.imu_state}, "
+              f"gps_state={self.gps_state}, "
+              f"cellular_state={self.cellular_state}, "
+              f"battery_level={getattr(self.battery_state, 'level', None)}, "
+              f"battery_charging={getattr(self.battery_state, 'charging', None)}, "
+              f"charging={self.battery_state.charging}, "
+              f"level={self.battery_state.level}")

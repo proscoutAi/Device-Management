@@ -3,6 +3,7 @@ import threading
 from threading import Thread
 
 import smbus
+from leds_manager import IMUState, LedsManagerService
 
 bus = smbus.SMBus(1)
 
@@ -29,7 +30,7 @@ lock = threading.Lock()
 
 class IMUManager:
     def __init__(self,imu_rate_per_second):
-        
+        self.led_manager_service = LedsManagerService()
         print(f"{time.ctime(time.time())}:IMU initialized successfully")
         IMUCalibrator = imu_calibration.IMUCalibrator()
         imu_values = IMUCalibrator.run()
@@ -297,18 +298,24 @@ class IMUManager:
     
     def update_imu(self):
         while True:
-            self.readACCx()
-            self.readACCy()
-            self.readACCz()
-            self.readGYRx()
-            self.readGYRy()
-            self.readGYRz()
-            self.readMAGx()
-            self.readMAGy()
-            self.readMAGz()
-            self.update_tilt_compensated_heading()
-            #self.read_temperature()
-            imu_buffer.append (self.imu_data.copy())
+            try:
+                self.readACCx()
+                self.readACCy()
+                self.readACCz()
+                self.readGYRx()
+                self.readGYRy()
+                self.readGYRz()
+                self.readMAGx()
+                self.readMAGy()
+                self.readMAGz()
+                self.update_tilt_compensated_heading()
+                # self.read_temperature()
+                imu_buffer.append (self.imu_data.copy())
+                self.led_manager_service.set_imu_state(IMUState.ONLINE)
+            except Exception as e:
+                print(f"{time.ctime(time.time())}:IMU Manager: Error updating IMU: {e}")
+                self.led_manager_service.set_imu_state(IMUState.ERROR)
+                raise e
             time.sleep(self.imu_rate_per_second)
     
     def get_imu_buffer_and_reset(self):

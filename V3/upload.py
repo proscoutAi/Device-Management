@@ -9,7 +9,7 @@ from threading import Thread
 
 import cv2
 import requests
-from leds_manager import LedsManagerService
+from leds_manager import CellularState, LedsManagerService
 from numpy import ndarray
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -99,7 +99,7 @@ class CloudFunctionClient:
                             
                 if response.status_code == 201:
                     print(f"{time.ctime(time.time())}:✅ Data sent successfully!")
-                    self.led_manager_service.set_cellular_online()
+                    self.led_manager_service.set_cellular_state(CellularState.ONLINE)
                     return response.json()
                 else:
                     print(f"{time.ctime(time.time())}:❌ Error: {response.status_code}")
@@ -146,7 +146,7 @@ class CloudFunctionClient:
         
     def save_to_disk(self, data):
         """Save data to local disk when upload fails"""
-        self.led_manager_service.set_cellular_offline()
+        self.led_manager_service.set_cellular_state(CellularState.NO_SIGNAL)
         try:
             # Create offline data directory if it doesn't exist
             offline_dir = "/home/proscout/offline_data"
