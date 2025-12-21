@@ -9,7 +9,7 @@
 # Configuration
 REMOTE_USER="proscout"
 REMOTE_HOST="100.74.134.30"
-REMOTE_BASE_PATH="/home/proscout/ProScout-master/device-manager"
+REMOTE_BASE_PATH="/home/proscout/ProScout-master/Device-Management"
 LOCAL_SOURCE_DIR="V3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_V3_PATH="${SCRIPT_DIR}/${LOCAL_SOURCE_DIR}"

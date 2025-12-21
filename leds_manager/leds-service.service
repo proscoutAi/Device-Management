@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/home/proscout/ProScout-master/device-manager
+WorkingDirectory=/home/proscout/ProScout-master/Device-Management
 ExecStart=/bin/bash -c 'source ../ProScout-Device/bin/activate && python leds_manager/leds_service.py'
 Restart=always
 RestartSec=10
