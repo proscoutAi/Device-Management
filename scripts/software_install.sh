@@ -4,7 +4,7 @@
 # This script downloads ProScout software and adds it to existing sara_r5_startup.sh
 
 INSTALL_DIR="/home/proscout/ProScout-master"
-DEVICE_DIR="$INSTALL_DIR/device-manager"
+DEVICE_DIR="$INSTALL_DIR/Device-Management"
 VENV_DIR="$INSTALL_DIR/ProScout-Device"
 LOGFILE="/var/log/proscout-install.log"
 
@@ -57,7 +57,7 @@ log_message "Downloading ProScout software and setting up virtual environment...
 
 sudo -u proscout bash << 'EOF'
 INSTALL_DIR="/home/proscout/ProScout-master"
-DEVICE_DIR="$INSTALL_DIR/device-manager"
+DEVICE_DIR="$INSTALL_DIR/Device-Management"
 VENV_DIR="$INSTALL_DIR/ProScout-Device"
 
 cd /home/proscout
@@ -122,7 +122,7 @@ sleep 10
 
 # Start ProScout Application
 echo "$(date): Starting ProScout application..."
-cd /home/proscout/ProScout-master/device-manager/
+cd /home/proscout/ProScout-master/Device-Management/
 source /home/proscout/ProScout-master/ProScout-Device/bin/activate
 nohup python3 main.py >> /var/log/proscout.log 2>&1 &
 PROSCOUT_PID=$!

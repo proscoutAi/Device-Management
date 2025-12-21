@@ -10,6 +10,7 @@ from threading import Thread
 from time import sleep
 
 import psutil
+
 from camera import Camera
 from flow_meter import cleanup, get_counter_and_reset, setup_flow_meter
 from gps_manager import get_gps_data
@@ -41,7 +42,7 @@ imu_connected = config.getboolean('Setup', 'imu')
 executor = ThreadPoolExecutor(max_workers=3)
 
 # Read the unique identifier (UUID or MAC address)
-with open("/home/proscout/ProScout-master/device-manager/device_id.txt", "r") as f:
+with open("/home/proscout/ProScout-master/Device-Management/device_id.txt", "r") as f:
       client_device_id = f.read().strip()
 
 time_format = '%Y-%m-%d_%H-%M-%S'

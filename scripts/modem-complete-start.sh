@@ -62,5 +62,5 @@ fi
 
 log_message "=== Modem initialization completed ==="
 source /home/proscout/ProScout-master/ProScout-Device/bin/activate
-cd  /home/proscout/ProScout-master/device-manager/
+cd  /home/proscout/ProScout-master/Device-Management/
 python3 main.py >> /var/log/proscout.log 2>&1
