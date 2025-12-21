@@ -1,6 +1,0 @@
-V4 hardware:
-pi zero
-modem - ozzmaker SARA-R5
-GPS - DUAL Band uart
-IMU - ozzmaker SARA-R5 on i2c
-wake up mode enabled
