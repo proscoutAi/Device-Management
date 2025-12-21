@@ -1,22 +1,21 @@
+import configparser
+import gc
+import os
+import socket
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from threading import Thread
 from time import sleep
-import time
 
 import psutil
-
 from camera import Camera
-from upload import CloudFunctionClient 
-from concurrent.futures import ThreadPoolExecutor
-from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter
-import configparser
-import os
+from flow_meter import cleanup, get_counter_and_reset, setup_flow_meter
 from gps_manager import get_gps_data
 from IMU_manager import IMUManager
-import sys
-import gc
-import socket
-
+from leds_manager import GPSState, IMUState, LedsManagerService
+from upload import CloudFunctionClient
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -79,6 +78,8 @@ class Session:
         @param camera_index: The index of the camera device to use
         @param interval: The interval in seconds between each image capture
         """
+        
+        self.led_manager_service = LedsManagerService()
 
         self.running = False
         self.start_time = None
@@ -193,18 +194,23 @@ class Session:
         
             gps_data = get_gps_data()
             if gps_data is None or gps_data['fix_status'] == 'No Fix':
+                self.led_manager_service.set_gps_state(GPSState.NO_FIX)
+                satellites = gps_data['satellites'] if gps_data and 'satellites' in gps_data else 'Unknown'
+                fix_quality = gps_data['fix_quality'] if gps_data and 'fix_quality' in gps_data else 'Unknown'
                 gps_data = {
-                'latitude': 0.0,
-                'longitude': 0.0,
-                'altitude': 0.0,
-                'timestamp': time.time(),
-                'speed_kmh': 0,
-                'course': 0,
-                'fix_quality': None,
-                'satellites': None,
-                'gps_timestamp': None,
-                'fix_status': 'No Fix'
+                    'latitude': 0.0,
+                    'longitude': 0.0,
+                    'altitude': 0.0,
+                    'timestamp': time.time(),
+                    'speed_kmh': 0,
+                    'course': 0,
+                    'fix_quality': fix_quality,
+                    'satellites': satellites,
+                    'gps_timestamp': None,
+                    'fix_status': 'No Fix'
                 }
+            else:
+                self.led_manager_service.set_gps_state(GPSState.ONLINE)
         
         
             #print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")
@@ -234,10 +240,12 @@ class Session:
                         if self.imu_restart_attempts > 0:
                             print(f"{time.ctime(time.time())}:IMU data flowing normally again")
                             self.imu_restart_attempts = 0
+                        self.led_manager_service.set_imu_state(IMUState.ONLINE)
                     
                 except Exception as e:
                     print(f"{time.ctime(time.time())}:Error getting IMU data: {e}")
                     imu_data = []
+                    self.led_manager_service.set_imu_state(IMUState.ERROR)
             
             # Periodic IMU health check
             imu_check_counter += 1
@@ -309,7 +317,6 @@ class Session:
 
         @return: True if the session was ended, False if the session was not running
         """
-
         if not self.running:
             return False
 
