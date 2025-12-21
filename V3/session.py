@@ -8,7 +8,7 @@ import psutil
 from camera import Camera
 from upload import CloudFunctionClient 
 from concurrent.futures import ThreadPoolExecutor
-from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter,convert_pulses_to_litters
+from flow_meter import get_counter_and_reset,cleanup,setup_flow_meter
 import configparser
 import os
 from gps_manager import get_gps_data

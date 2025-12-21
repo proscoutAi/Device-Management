@@ -7,8 +7,9 @@ import sys
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-'''
+
 Blue = LED(17)
+'''
 Yellow=LED(18)
 Left = Button(27)
 Right= Button(26)
@@ -25,6 +26,7 @@ def main():
             
         # Keep main thread alive and handle shutdown gracefully
         while True:
+            Blue.toggle()
             sleep(1)
             
     except KeyboardInterrupt:

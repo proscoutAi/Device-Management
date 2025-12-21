@@ -8,9 +8,9 @@ from LSM6DSL import *
 from MMC5983MA import *
 import time
 import sys
-import board
-import busio
-from adafruit_bmp3xx import BMP3XX_I2C
+#import board
+#import busio
+#from adafruit_bmp3xx import BMP3XX_I2C
 
 
 RAD_TO_DEG = 57.29578
@@ -66,8 +66,8 @@ class IMUManager:
         self.writeByte(MMC5983MA_ADDRESS,MMC5983MA_CONTROL_0,0b00100100)     #Enable auto reset
         self.writeByte(MMC5983MA_ADDRESS,MMC5983MA_CONTROL_1,0b00000000)     #Filter bandwdith 100Hz (16 bit mode)
         self.writeByte(MMC5983MA_ADDRESS,MMC5983MA_CONTROL_2,0b10001101)     #Continous mode at 100Hz
-        i2c = busio.I2C(board.SCL, board.SDA)
-        self.barometer_sensor = BMP3XX_I2C(i2c, address=0x77)
+        #i2c = busio.I2C(board.SCL, board.SDA)
+        #self.barometer_sensor = BMP3XX_I2C(i2c, address=0x77)
         self.imu_rate_per_second = 1/imu_rate_per_second
         
         self.imu_data = {
@@ -116,110 +116,173 @@ class IMUManager:
         time.sleep(1)
         
     def readACCx(self):
-        acc_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTX_L_XL)
-        acc_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTX_H_XL)
-        acc_combined = (acc_l | acc_h <<8)
-        acc_combined = acc_combined  if acc_combined < 32768 else acc_combined - 65536
-        self.imu_data['ACCx'] = acc_combined
-        self.imu_data['ACCx_mg_unit'] = acc_combined *acc_sensitivity
+        try:
+            with lock: # Prevents other I2C traffic from interrupting
+                acc_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTX_L_XL)
+                acc_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTX_H_XL)
+                acc_combined = (acc_l | acc_h <<8)
+                acc_combined = acc_combined  if acc_combined < 32768 else acc_combined - 65536
+                self.imu_data['ACCx'] = acc_combined
+                self.imu_data['ACCx_mg_unit'] = acc_combined *acc_sensitivity
+        except OSError as e:
+           print(f"I2C Communication Error: {e}")
+           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+        except Exception as e:
+           print(f"Unexpected error: {type(e).__name__}: {e}")
 
     def readACCy(self):
-        acc_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTY_L_XL)
-        acc_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTY_H_XL)
-        acc_combined = (acc_l | acc_h <<8)
-        acc_combined = acc_combined  if acc_combined < 32768 else acc_combined - 65536
-        self.imu_data['ACCy'] = acc_combined
-        self.imu_data['ACCy_mg_unit'] = acc_combined *acc_sensitivity
+        try:
+            with lock: # Prevents other I2C traffic from interrupting
+                acc_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTY_L_XL)
+                acc_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTY_H_XL)
+                acc_combined = (acc_l | acc_h <<8)
+                acc_combined = acc_combined  if acc_combined < 32768 else acc_combined - 65536
+                self.imu_data['ACCy'] = acc_combined
+                self.imu_data['ACCy_mg_unit'] = acc_combined *acc_sensitivity
+        except OSError as e:
+           print(f"I2C Communication Error: {e}")
+           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+        except Exception as e:
+           print(f"Unexpected error: {type(e).__name__}: {e}")
 
     def readACCz(self):
-        acc_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTZ_L_XL)
-        acc_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTZ_H_XL)
-        acc_combined = (acc_l | acc_h <<8)
-        acc_combined = acc_combined  if acc_combined < 32768 else acc_combined - 65536
-        self.imu_data['ACCz'] = acc_combined
-        self.imu_data['ACCz_g_unit'] = acc_combined *acc_sensitivity
+        try:
+            with lock: # Prevents other I2C traffic from interrupting
+                acc_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTZ_L_XL)
+                acc_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTZ_H_XL)
+                acc_combined = (acc_l | acc_h <<8)
+                acc_combined = acc_combined  if acc_combined < 32768 else acc_combined - 65536
+                self.imu_data['ACCz'] = acc_combined
+                self.imu_data['ACCz_g_unit'] = acc_combined *acc_sensitivity
+        except OSError as e:
+           print(f"I2C Communication Error: {e}")
+           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+        except Exception as e:
+           print(f"Unexpected error: {type(e).__name__}: {e}")
 
     def readGYRx(self):
-        gyr_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTX_L_G)
-        gyr_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTX_H_G)
-        gyr_combined = (gyr_l | gyr_h <<8)
-        gyr_combined = gyr_combined  if gyr_combined < 32768 else gyr_combined - 65536
-        self.imu_data['GYRx'] = gyr_combined
-        self.imu_data['GYRx_dps'] = gyr_combined *gyro_sensativity
+        try:
+            with lock: # Prevents other I2C traffic from interrupting
+                gyr_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTX_L_G)
+                gyr_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTX_H_G)
+                gyr_combined = (gyr_l | gyr_h <<8)
+                gyr_combined = gyr_combined  if gyr_combined < 32768 else gyr_combined - 65536
+                self.imu_data['GYRx'] = gyr_combined
+                self.imu_data['GYRx_dps'] = gyr_combined *gyro_sensativity
+        except OSError as e:
+           print(f"I2C Communication Error: {e}")
+           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+        except Exception as e:
+           print(f"Unexpected error: {type(e).__name__}: {e}")
 
     def readGYRy(self):
-        gyr_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTY_L_G)
-        gyr_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTY_H_G)
-        gyr_combined = (gyr_l | gyr_h <<8)
-        gyr_combined =  gyr_combined if gyr_combined < 32768 else gyr_combined - 65536
-        self.imu_data['GYRy'] = gyr_combined
-        self.imu_data['GYRy_dps'] = gyr_combined *gyro_sensativity
+      try:
+        with lock: # Prevents other I2C traffic from interrupting
+            gyr_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTY_L_G)
+            gyr_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTY_H_G)
+            gyr_combined = (gyr_l | gyr_h <<8)
+            gyr_combined =  gyr_combined if gyr_combined < 32768 else gyr_combined - 65536
+            self.imu_data['GYRy'] = gyr_combined
+            self.imu_data['GYRy_dps'] = gyr_combined *gyro_sensativity
+      except OSError as e:
+           print(f"I2C Communication Error: {e}")
+           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+      except Exception as e:
+           print(f"Unexpected error: {type(e).__name__}: {e}")
 
     def readGYRz(self):
-        gyr_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTZ_L_G)
-        gyr_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTZ_H_G)
-        gyr_combined = (gyr_l | gyr_h <<8)
-        gyr_combined = gyr_combined  if gyr_combined < 32768 else gyr_combined - 65536
-        self.imu_data['GYRz'] = gyr_combined
-        self.imu_data['GYRz_dps'] = gyr_combined *gyro_sensativity
+        try:
+            with lock: # Prevents other I2C traffic from interrupting
+                gyr_l = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTZ_L_G)
+                gyr_h = bus.read_byte_data(LSM6DSL_ADDRESS, LSM6DSL_OUTZ_H_G)
+                gyr_combined = (gyr_l | gyr_h <<8)
+                gyr_combined = gyr_combined  if gyr_combined < 32768 else gyr_combined - 65536
+                self.imu_data['GYRz'] = gyr_combined
+                self.imu_data['GYRz_dps'] = gyr_combined *gyro_sensativity
+        except OSError as e:
+           print(f"I2C Communication Error: {e}")
+           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+        except Exception as e:
+           print(f"Unexpected error: {type(e).__name__}: {e}")       
 
     def readMAGx(self):
-        mag_l = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_XOUT_0)
-        mag_h = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_XOUT_1)
-        mag_xyz = bus.read_byte_data(MMC5983MA_ADDRESS,MMC5983MA_XYZOUT_2)
-        
-        # Get raw 18-bit value
-        MAGx_raw = mag_l << 10 | mag_h << 2 | (mag_xyz & 0b11000000) >> 6
-        
-        # Apply hard iron correction (remove offset)
-        MAGx_corrected = MAGx_raw - offset_x
-        
-        # Apply soft iron correction (scale normalization)
-        MAGx_scaled = MAGx_corrected * scale_x
-        
-        # Convert to final units (gauss or tesla)
-        MAGx_final = MAGx_scaled * (mRes)
-        
-        self.imu_data['MAGx'] = MAGx_final
+        try:
+            with lock: # Prevents other I2C traffic from interrupting
+                mag_l = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_XOUT_0)
+                mag_h = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_XOUT_1)
+                mag_xyz = bus.read_byte_data(MMC5983MA_ADDRESS,MMC5983MA_XYZOUT_2)
+                
+                # Get raw 18-bit value
+                MAGx_raw = mag_l << 10 | mag_h << 2 | (mag_xyz & 0b11000000) >> 6
+                
+                # Apply hard iron correction (remove offset)
+                MAGx_corrected = MAGx_raw - offset_x
+                
+                # Apply soft iron correction (scale normalization)
+                MAGx_scaled = MAGx_corrected * scale_x
+                
+                # Convert to final units (gauss or tesla)
+                MAGx_final = MAGx_scaled * (mRes)
+                
+                self.imu_data['MAGx'] = MAGx_final
+        except OSError as e:
+           print(f"I2C Communication Error: {e}")
+           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+        except Exception as e:
+           print(f"Unexpected error: {type(e).__name__}: {e}")
 
     def readMAGy(self):
-        mag_l = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_YOUT_0)
-        mag_h = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_YOUT_1)
-        mag_xyz = bus.read_byte_data(MMC5983MA_ADDRESS,MMC5983MA_XYZOUT_2)
-        
-        # Get raw 18-bit value
-        MAGy_raw = mag_l << 10 | mag_h <<2 | (mag_xyz & 0b00110000) >> 4
-        
-        # Apply hard iron correction (remove offset)
-        MAGy_corrected = MAGy_raw - offset_y
-        
-        # Apply soft iron correction (scale normalization)
-        MAGy_scaled = MAGy_corrected * scale_y
-        
-        # Convert to final units (gauss or tesla)
-        MAGy_final = MAGy_scaled * (mRes)
-        
-        self.imu_data['MAGy'] = MAGy_final
+        try:
+            with lock: # Prevents other I2C traffic from interrupting
+                mag_l = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_YOUT_0)
+                mag_h = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_YOUT_1)
+                mag_xyz = bus.read_byte_data(MMC5983MA_ADDRESS,MMC5983MA_XYZOUT_2)
+                
+                # Get raw 18-bit value
+                MAGy_raw = mag_l << 10 | mag_h <<2 | (mag_xyz & 0b00110000) >> 4
+                
+                # Apply hard iron correction (remove offset)
+                MAGy_corrected = MAGy_raw - offset_y
+                
+                # Apply soft iron correction (scale normalization)
+                MAGy_scaled = MAGy_corrected * scale_y
+                
+                # Convert to final units (gauss or tesla)
+                MAGy_final = MAGy_scaled * (mRes)
+                
+                self.imu_data['MAGy'] = MAGy_final
+        except OSError as e:
+           print(f"I2C Communication Error: {e}")
+           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+        except Exception as e:
+           print(f"Unexpected error: {type(e).__name__}: {e}")
 
     def readMAGz(self):
-        mag_l = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_ZOUT_0)
-        mag_h = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_ZOUT_1)
-        mag_xyz = bus.read_byte_data(MMC5983MA_ADDRESS,MMC5983MA_XYZOUT_2)
+        try:
+            with lock: # Prevents other I2C traffic from interrupting
+                mag_l = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_ZOUT_0)
+                mag_h = bus.read_byte_data(MMC5983MA_ADDRESS, MMC5983MA_ZOUT_1)
+                mag_xyz = bus.read_byte_data(MMC5983MA_ADDRESS,MMC5983MA_XYZOUT_2)
+                
+                # Get raw 18-bit value
+                MAGz_raw = mag_l << 10 | mag_h <<2 | (mag_xyz & 0b00001100) >> 2
+                
+                # Apply hard iron correction (remove offset)
+                MAGz_corrected = MAGz_raw - offset_z
+                
+                # Apply soft iron correction (scale normalization)
+                MAGz_scaled = MAGz_corrected * scale_z
+                
+                # Convert to final units (gauss or tesla)
+                MAGz_final = MAGz_scaled * (mRes)
+                
+                self.imu_data['MAGz'] = MAGz_final
+        except OSError as e:
+           print(f"I2C Communication Error: {e}")
+           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+        except Exception as e:
+           print(f"Unexpected error: {type(e).__name__}: {e}")
         
-        # Get raw 18-bit value
-        MAGz_raw = mag_l << 10 | mag_h <<2 | (mag_xyz & 0b00001100) >> 2
-        
-        # Apply hard iron correction (remove offset)
-        MAGz_corrected = MAGz_raw - offset_z
-        
-        # Apply soft iron correction (scale normalization)
-        MAGz_scaled = MAGz_corrected * scale_z
-        
-        # Convert to final units (gauss or tesla)
-        MAGz_final = MAGz_scaled * (mRes)
-        
-        self.imu_data['MAGz'] = MAGz_final
-    
     def read_temperature(self):
         self.imu_data['Temperature'] = self.barometer_sensor.temperature
         self.imu_data['Pressure'] = self.barometer_sensor.pressure
@@ -237,7 +300,7 @@ class IMUManager:
             self.readMAGy()
             self.readMAGz()
             self.update_tilt_compensated_heading()
-            self.read_temperature()
+            #self.read_temperature()
             imu_buffer.append (self.imu_data.copy())
             time.sleep(self.imu_rate_per_second)
     
