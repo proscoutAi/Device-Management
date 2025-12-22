@@ -42,7 +42,7 @@ imu_connected = config.getboolean('Setup', 'imu')
 executor = ThreadPoolExecutor(max_workers=3)
 
 # Read the unique identifier (UUID or MAC address)
-with open("/home/proscout/ProScout-master/Device-Management/device_id.txt", "r") as f:
+with open("/home/proscout/ProScout-master/device-manager/device_id.txt", "r") as f:
       client_device_id = f.read().strip()
 
 time_format = '%Y-%m-%d_%H-%M-%S'

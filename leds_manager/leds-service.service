@@ -4,13 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/home/proscout/ProScout-master/Device-Management
-ExecStart=/bin/bash -c 'source ../ProScout-Device/bin/activate && python leds_manager/leds_service.py'
+User=proscout
+WorkingDirectory=/home/proscout/ProScout-master/device-manager
+ExecStart=/home/proscout/ProScout-master/ProScout-Device/bin/python /home/proscout/ProScout-master/device-manager/leds_manager/leds_service.py
 Restart=always
 RestartSec=10
-StandardOutput=journal
-StandardError=journal
+Environment="PYTHONUNBUFFERED=1"
 
 [Install]
 WantedBy=multi-user.target
