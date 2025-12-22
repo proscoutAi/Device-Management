@@ -37,7 +37,7 @@ print(f"{time.ctime(time.time())}:working cloud url is:{cloud_function_url}")
 batch_size = config.getint('Setup', 'batch_size')
 imu_rate_per_second = config.getint('Setup', 'imu_rate_per_second')
 interval_in_hours = sleep_interval/3600
-flow_meter_pulses_per_litter = config.getint('Setup', 'flow_meter_pulses_per_litter')
+#flow_meter_pulses_per_litter = config.getint('Setup', 'flow_meter_pulses_per_litter')
 imu_connected = config.getboolean('Setup', 'imu')
 executor = ThreadPoolExecutor(max_workers=3)
 
@@ -225,7 +225,7 @@ class Session:
             litter_per_hour = 0.0
             if flow_meter_connected:
                 flow_counter = get_counter_and_reset()
-                litter_per_hour = flow_counter / flow_meter_pulses_per_litter
+                pulses = flow_counter 
                 
             
             # Get IMU data with health checking
@@ -257,7 +257,7 @@ class Session:
                 
             snap_time = datetime.now()
                 
-            self.add_payload_to_batch(snap_time, litter_per_hour, gps_data, imu_data, image)
+            self.add_payload_to_batch(snap_time, pulses, gps_data, imu_data, image)
             log_performance += 1
             if log_performance ==60:
                 log_system_status()
