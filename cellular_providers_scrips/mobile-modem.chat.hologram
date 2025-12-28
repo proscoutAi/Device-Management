@@ -1,0 +1,16 @@
+ABORT 'BUSY'
+ABORT 'NO CARRIER'
+ABORT 'NO ANSWER'
+TIMEOUT 30
+REPORT CONNECT
+'' AT
+OK ATH
+OK ATZ
+SAY "Setting APN...\n"
+'' AT+CGDCONT=1
+SAY "Configuring hologram APN...\n"
+'' AT+CGDCONT=1,"IP","hologram"
+TIMEOUT 90
+SAY "Dialing...\n"
+OK ATD*99#
+CONNECT ''

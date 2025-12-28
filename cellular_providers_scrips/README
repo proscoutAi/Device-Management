@@ -1,0 +1,7 @@
+provider file should be located at:
+/etc/ppp/peers/
+the name of the file should be provider (remove the carrier from the name)
+
+mobile-modem.chat shuld be located at:
+/etc/ppp/chatscripts/
+the name of the file should be mobile-modem.chat (remove the carrier from the name)

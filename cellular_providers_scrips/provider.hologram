@@ -1,0 +1,33 @@
+# hologram APN configuration for dialup connection
+#
+# This is the default configuration used by pon(1) and poff(1).
+# See the manual page pppd(8) for information on all the options.
+
+# Hologram credentials
+user ""
+
+# Connect using hologram APN
+connect "/usr/sbin/chat -v -f /etc/ppp/chatscripts/mobile-modem.chat"
+
+# Serial device to which the modem is connected.
+/dev/ttyAMA0
+
+# Speed of the serial line.
+115200
+
+# Assumes that your IP address is allocated dynamically by the ISP.
+noipdefault
+
+# Try to get the name server addresses from the ISP.
+usepeerdns
+
+# Use this connection as the default route.
+defaultroute
+defaultroute-metric 1000 
+replacedefaultroute
+
+# Makes pppd "dial again" when the connection is lost.
+persist
+
+# Do not ask the remote to authenticate.
+noauth
