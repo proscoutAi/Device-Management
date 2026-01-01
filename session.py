@@ -13,7 +13,7 @@ import psutil
 
 from camera import Camera
 from flow_meter import cleanup, get_counter_and_reset, setup_flow_meter
-from gps_manager import get_gps_data
+from gps_manager import get_gps_data, get_gps_data_age, is_gps_healthy, restart_gps_manager
 from IMU_manager import IMUManager
 from leds_manager import GPSState, IMUState, LedsManagerService
 from upload import CloudFunctionClient
@@ -101,6 +101,11 @@ class Session:
         self.max_imu_restarts = 5
         self.imu_timeout_seconds = 30  # If no IMU data for 30 seconds, restart
         
+        # GPS health monitoring
+        self.gps_restart_attempts = 0
+        self.max_gps_restarts = 5
+        self.gps_stale_data_threshold = 120  # If no NMEA sentences received for 2 minutes, restart
+        
     
     def flash_batch(self):
         executor.submit(self.upload_class.upload_json, self.batch_payload)
@@ -178,6 +183,48 @@ class Session:
             print(f"{time.ctime(time.time())}:IMU restart failed: {e}")
             self.imu_manager = None
             return False
+    
+    def check_gps_health(self):
+        """Check if GPS is providing data and restart if needed"""
+        # Check if GPS manager is healthy (thread alive and serial connected)
+        if not is_gps_healthy():
+            print(f"{time.ctime(time.time())}:GPS manager is not healthy (thread dead or serial disconnected)")
+            log_system_status()
+            return self.restart_gps()
+        
+        # Check data age - if data is stale (no NMEA sentences received), restart
+        data_age = get_gps_data_age()
+        if data_age is None:
+            print(f"{time.ctime(time.time())}:GPS data age is None - GPS manager may not be initialized")
+            log_system_status()
+            return self.restart_gps()
+        
+        if data_age > self.gps_stale_data_threshold:
+            print(f"{time.ctime(time.time())}:GPS data is stale ({data_age:.1f}s old, threshold: {self.gps_stale_data_threshold}s) - no NMEA sentences received")
+            log_system_status()
+            return self.restart_gps()
+        
+        return True
+    
+    def restart_gps(self):
+        """Attempt to restart the GPS manager"""
+        if self.gps_restart_attempts >= self.max_gps_restarts:
+            print(f"{time.ctime(time.time())}:Maximum GPS restart attempts ({self.max_gps_restarts}) reached. Continuing with GPS issues.")
+            return False
+        
+        self.gps_restart_attempts += 1
+        print(f"{time.ctime(time.time())}:Attempting GPS restart #{self.gps_restart_attempts}")
+        
+        try:
+            if restart_gps_manager():
+                print(f"{time.ctime(time.time())}:GPS restart successful!")
+                return True
+            else:
+                print(f"{time.ctime(time.time())}:GPS restart failed - GPS manager not reconnected")
+                return False
+        except Exception as e:
+            print(f"{time.ctime(time.time())}:GPS restart failed: {e}")
+            return False
 
     def run(self):
         """The main loop of the session"""
@@ -185,6 +232,8 @@ class Session:
         should_i_snap_image = 0
         imu_check_counter = 0
         imu_check_interval = 10  # Check IMU health every 10 loops
+        gps_check_counter = 0
+        gps_check_interval = 10  # Check GPS health every 10 loops
         log_performance = 0 #log perfomance once a minute
         # Set session start time here when run() starts - time should be correct by now
         if self.upload_class.session_start_time is None:
@@ -194,6 +243,16 @@ class Session:
         while self.running:
         
             gps_data = get_gps_data()
+            
+            # Reset restart attempts if GPS is working (receiving data and has fix)
+            if gps_data is not None:
+                data_age = get_gps_data_age()
+                if data_age is not None and data_age < 10 and gps_data.get('fix_status') != 'No Fix':
+                    # Data is fresh and GPS has fix - reset restart attempts
+                    if self.gps_restart_attempts > 0:
+                        print(f"{time.ctime(time.time())}:GPS data flowing normally again with fix")
+                        self.gps_restart_attempts = 0
+            
             if gps_data is None or gps_data['fix_status'] == 'No Fix':
                 self.led_manager_service.set_gps_state(GPSState.NO_FIX)
                 satellites = gps_data['satellites'] if gps_data and 'satellites' in gps_data else 'Unknown'
@@ -212,6 +271,13 @@ class Session:
                 }
             else:
                 self.led_manager_service.set_gps_state(GPSState.ONLINE)
+            
+            # Periodic GPS health check
+            gps_check_counter += 1
+            if gps_check_counter >= gps_check_interval:
+                gps_check_counter = 0
+                if not self.check_gps_health():
+                    print(f"{time.ctime(time.time())}:GPS health check failed - continuing with GPS monitoring")
         
         
             #print(f"lat:{gps_data['latitude']} lon:{gps_data['longitude']}")

@@ -245,26 +245,74 @@ class GPSManager:
         if self.reader_thread and self.reader_thread.is_alive():
             self.reader_thread.join(timeout=1)
         if self.cmd_ser:
-            self.cmd_ser.close()
+            try:
+                self.cmd_ser.close()
+            except:
+                pass
+    
+    def is_healthy(self):
+        """Check if GPS is healthy - thread alive and serial port connected"""
+        if not self.cmd_ser:
+            return False
+        if not self.reader_thread or not self.reader_thread.is_alive():
+            return False
+        return True
 
-# Global instance
-gps_manager = GPSManager()
+# Global instance - initialize as None to allow lazy initialization
+gps_manager = None
+
+def get_gps_manager():
+    """Get or create GPS manager instance"""
+    global gps_manager
+    if gps_manager is None:
+        gps_manager = GPSManager()
+    return gps_manager
 
 def get_gps_data():
+    """Get GPS data, with retry if not connected"""
     global gps_manager
+    gps_manager = get_gps_manager()
     if gps_manager is not None and gps_manager.cmd_ser:
         return gps_manager.get_gps_data()
     else:
-        print("GPS is not connected, retrying...")
-        gps_manager= GPSManager()
+        print(f"{time.ctime(time.time())}:GPS is not connected, retrying...")
+        try:
+            if gps_manager:
+                gps_manager.close()
+        except:
+            pass
+        gps_manager = GPSManager()
         return gps_manager.get_gps_data() if gps_manager and gps_manager.cmd_ser else None
+
+def restart_gps_manager():
+    """Restart GPS manager by closing and recreating"""
+    global gps_manager
+    print(f"{time.ctime(time.time())}:Restarting GPS manager...")
+    try:
+        if gps_manager:
+            gps_manager.close()
+    except Exception as e:
+        print(f"{time.ctime(time.time())}:Error closing GPS manager: {e}")
+    gps_manager = None
+    time.sleep(1)  # Brief pause for cleanup
+    gps_manager = GPSManager()
+    return gps_manager is not None and gps_manager.cmd_ser is not None
 
 def get_gps_data_age():
     """Get age of dual band GPS data"""
     global gps_manager
+    gps_manager = get_gps_manager()
     if gps_manager is not None:
         return gps_manager.get_data_age()
     return None
+
+def is_gps_healthy():
+    """Check if GPS manager is healthy"""
+    global gps_manager
+    gps_manager = get_gps_manager()
+    if gps_manager is not None:
+        return gps_manager.is_healthy()
+    return False
 
 # Test function
 if __name__ == "__main__":
