@@ -11,7 +11,6 @@ sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 
-Blue = LED(17)
 '''
 Yellow=LED(18)
 Left = Button(27)
@@ -20,11 +19,14 @@ Right= Button(26)
 def main():
     led_manager_service = LedsManagerService()
     try:
+        print(f"{time.ctime(time.time())}: leds manager service initialized ")
+        led_manager_service.set_system_state(SystemState.ON)
+        print(f"{time.ctime(time.time())}: System state set to ON")
         print(f"{time.ctime(time.time())}: Trying to start main application!!!!!")
         session = Session()
         if session.start():
             print(f"{time.ctime(time.time())}: Session started successfully")
-            led_manager_service.set_system_state(SystemState.ON)
+            
         else:
             print(f"{time.ctime(time.time())}: Failed to start session")
             led_manager_service.set_system_state(SystemState.MALFUNCTIONING)

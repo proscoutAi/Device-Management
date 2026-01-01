@@ -5,6 +5,7 @@ import sys
 import serial
 import threading
 from threading import Lock
+import os
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -285,18 +286,33 @@ def get_gps_data():
         return gps_manager.get_gps_data() if gps_manager and gps_manager.cmd_ser else None
 
 def restart_gps_manager():
-    """Restart GPS manager by closing and recreating"""
+    """Restart GPS manager by closing and recreating the serial port connection"""
     global gps_manager
-    print(f"{time.ctime(time.time())}:Restarting GPS manager...")
+    print(f"{time.ctime(time.time())}:Restarting GPS manager (closing and reopening serial port)...")
+    
+    # Close existing connection
     try:
         if gps_manager:
             gps_manager.close()
     except Exception as e:
         print(f"{time.ctime(time.time())}:Error closing GPS manager: {e}")
     gps_manager = None
-    time.sleep(1)  # Brief pause for cleanup
+    
+    # Brief pause to allow port to be released
+    time.sleep(1)
+    
+    # Recreate GPS manager (reopens serial port)
     gps_manager = GPSManager()
-    return gps_manager is not None and gps_manager.cmd_ser is not None
+    success = gps_manager is not None and gps_manager.cmd_ser is not None
+    
+    if success:
+        print(f"{time.ctime(time.time())}:GPS manager serial port reopened successfully")
+        # Give GPS a moment to start sending data again
+        time.sleep(2)
+    else:
+        print(f"{time.ctime(time.time())}:GPS manager serial port could not be reopened")
+    
+    return success
 
 def get_gps_data_age():
     """Get age of dual band GPS data"""
