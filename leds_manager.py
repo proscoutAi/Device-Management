@@ -46,7 +46,12 @@ class LedsManager:
 class SystemState(Enum):
     ON = "on"
     BOOTING = "booting"
-    MALFUNCTIONING = "malfunctioning"    
+    MALFUNCTIONING = "malfunctioning"
+
+class DockingState(Enum):
+    DOCKED = "docked"
+    UNDOCKED = "undocked"
+
 class GPSState(Enum):
     ONLINE = "online"
     NO_FIX = "no_fix"
@@ -84,6 +89,7 @@ class LedsManagerService:
             if LedsManagerService._initialized:
                 return
             self.system_state = SystemState.BOOTING
+            self.docking_state = DockingState.DOCKED
             self.gps_state = GPSState.NO_FIX
             self.cellular_state = CellularState.NO_SIGNAL
             self.imu_state = IMUState.ERROR
@@ -94,6 +100,11 @@ class LedsManagerService:
     def set_system_state(self, state: SystemState):
         if self.system_state != state:
             self.system_state = state
+            self._update_leds()
+            
+    def set_docking_state(self, state: DockingState):
+        if self.docking_state != state:
+            self.docking_state = state
             self._update_leds()
             
     def set_gps_state(self, state: GPSState):
@@ -119,14 +130,16 @@ class LedsManagerService:
     def _update_leds(self):
         if self.system_state == SystemState.BOOTING:
             self.leds_manager.blink(LEDColor.RED, 1000)
-        elif self.imu_state == IMUState.CALIBRATING:
-            self.leds_manager.blink(LEDColor.GREEN, 100)
         elif self.system_state == SystemState.MALFUNCTIONING:
             self.leds_manager.turn_on(LEDColor.RED)
         elif self.imu_state == IMUState.ERROR:
             self.leds_manager.turn_on(LEDColor.RED)
+        elif self.docking_state == DockingState.UNDOCKED:
+            self.leds_manager.turn_on(LEDColor.RED)
         elif self.gps_state == GPSState.NO_FIX:
             self.leds_manager.blink(LEDColor.RED, 100)
+        elif self.imu_state == IMUState.CALIBRATING:
+            self.leds_manager.blink(LEDColor.GREEN, 100)
         elif self.cellular_state == CellularState.NO_SIGNAL:
             self.leds_manager.blink(LEDColor.GREEN, 1000)
         elif self.system_state == SystemState.ON:
@@ -146,6 +159,7 @@ class LedsManagerService:
     def _print_state(self):
         print(f"{time.ctime(time.time())}: LedsManagerService state: "
               f"system_state={self.system_state}, "
+              f"docking_state={self.docking_state}, "
               f"imu_state={self.imu_state}, "
               f"gps_state={self.gps_state}, "
               f"cellular_state={self.cellular_state}, "
