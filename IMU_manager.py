@@ -28,6 +28,10 @@ gyro_sensativity = 0.07 #°/s per LSB
 imu_buffer = []
 lock = threading.Lock()
 
+# Rate limiting for error messages (prevent log spam)
+_error_last_logged = {}  # Track last error time per sensor/axis
+_error_rate_limit_seconds = 10  # Only log same error once per 10 seconds
+
 class IMUManager:
     def __init__(self,imu_rate_per_second):
         self.led_manager_service = LedsManagerService()
@@ -133,8 +137,22 @@ class IMUManager:
                 self.imu_data['ACCx'] = acc_combined
                 self.imu_data['ACCx_mg_unit'] = acc_combined *acc_sensitivity
         except OSError as e:
-           print(f"I2C Communication Error: {e}")
-           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+            # Rate limit error messages
+            error_key = "LSM6DSL_ACC_X"
+            current_time = time.time()
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                _error_last_logged[error_key] = current_time
+                # Detect error type and provide context
+                if hasattr(e, 'errno'):
+                    if e.errno == 121:  # Remote I/O error
+                        error_desc = "Device not responding (check power/connections)"
+                    elif e.errno == 5:  # Input/output error
+                        error_desc = "I/O error (check I2C bus/connections)"
+                    else:
+                        error_desc = f"OS Error {e.errno}: {e}"
+                else:
+                    error_desc = str(e)
+                print(f"IMU Error: LSM6DSL Accelerometer X-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -148,8 +166,22 @@ class IMUManager:
                 self.imu_data['ACCy'] = acc_combined
                 self.imu_data['ACCy_mg_unit'] = acc_combined *acc_sensitivity
         except OSError as e:
-           print(f"I2C Communication Error: {e}")
-           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+            # Rate limit error messages
+            error_key = "LSM6DSL_ACC_Y"
+            current_time = time.time()
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                _error_last_logged[error_key] = current_time
+                # Detect error type and provide context
+                if hasattr(e, 'errno'):
+                    if e.errno == 121:  # Remote I/O error
+                        error_desc = "Device not responding (check power/connections)"
+                    elif e.errno == 5:  # Input/output error
+                        error_desc = "I/O error (check I2C bus/connections)"
+                    else:
+                        error_desc = f"OS Error {e.errno}: {e}"
+                else:
+                    error_desc = str(e)
+                print(f"IMU Error: LSM6DSL Accelerometer Y-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -161,10 +193,24 @@ class IMUManager:
                 acc_combined = (acc_l | acc_h <<8)
                 acc_combined = acc_combined  if acc_combined < 32768 else acc_combined - 65536
                 self.imu_data['ACCz'] = acc_combined
-                self.imu_data['ACCz_g_unit'] = acc_combined *acc_sensitivity
+                self.imu_data['ACCz_mg_unit'] = acc_combined *acc_sensitivity
         except OSError as e:
-           print(f"I2C Communication Error: {e}")
-           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+            # Rate limit error messages
+            error_key = "LSM6DSL_ACC_Z"
+            current_time = time.time()
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                _error_last_logged[error_key] = current_time
+                # Detect error type and provide context
+                if hasattr(e, 'errno'):
+                    if e.errno == 121:  # Remote I/O error
+                        error_desc = "Device not responding (check power/connections)"
+                    elif e.errno == 5:  # Input/output error
+                        error_desc = "I/O error (check I2C bus/connections)"
+                    else:
+                        error_desc = f"OS Error {e.errno}: {e}"
+                else:
+                    error_desc = str(e)
+                print(f"IMU Error: LSM6DSL Accelerometer Z-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -178,8 +224,22 @@ class IMUManager:
                 self.imu_data['GYRx'] = gyr_combined
                 self.imu_data['GYRx_dps'] = gyr_combined *gyro_sensativity
         except OSError as e:
-           print(f"I2C Communication Error: {e}")
-           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+            # Rate limit error messages
+            error_key = "LSM6DSL_GYR_X"
+            current_time = time.time()
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                _error_last_logged[error_key] = current_time
+                # Detect error type and provide context
+                if hasattr(e, 'errno'):
+                    if e.errno == 121:  # Remote I/O error
+                        error_desc = "Device not responding (check power/connections)"
+                    elif e.errno == 5:  # Input/output error
+                        error_desc = "I/O error (check I2C bus/connections)"
+                    else:
+                        error_desc = f"OS Error {e.errno}: {e}"
+                else:
+                    error_desc = str(e)
+                print(f"IMU Error: LSM6DSL Gyroscope X-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -193,8 +253,22 @@ class IMUManager:
             self.imu_data['GYRy'] = gyr_combined
             self.imu_data['GYRy_dps'] = gyr_combined *gyro_sensativity
       except OSError as e:
-           print(f"I2C Communication Error: {e}")
-           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+            # Rate limit error messages
+            error_key = "LSM6DSL_GYR_Y"
+            current_time = time.time()
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                _error_last_logged[error_key] = current_time
+                # Detect error type and provide context
+                if hasattr(e, 'errno'):
+                    if e.errno == 121:  # Remote I/O error
+                        error_desc = "Device not responding (check power/connections)"
+                    elif e.errno == 5:  # Input/output error
+                        error_desc = "I/O error (check I2C bus/connections)"
+                    else:
+                        error_desc = f"OS Error {e.errno}: {e}"
+                else:
+                    error_desc = str(e)
+                print(f"IMU Error: LSM6DSL Gyroscope Y-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
       except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -208,8 +282,22 @@ class IMUManager:
                 self.imu_data['GYRz'] = gyr_combined
                 self.imu_data['GYRz_dps'] = gyr_combined *gyro_sensativity
         except OSError as e:
-           print(f"I2C Communication Error: {e}")
-           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+            # Rate limit error messages
+            error_key = "LSM6DSL_GYR_Z"
+            current_time = time.time()
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                _error_last_logged[error_key] = current_time
+                # Detect error type and provide context
+                if hasattr(e, 'errno'):
+                    if e.errno == 121:  # Remote I/O error
+                        error_desc = "Device not responding (check power/connections)"
+                    elif e.errno == 5:  # Input/output error
+                        error_desc = "I/O error (check I2C bus/connections)"
+                    else:
+                        error_desc = f"OS Error {e.errno}: {e}"
+                else:
+                    error_desc = str(e)
+                print(f"IMU Error: LSM6DSL Gyroscope Z-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")       
 
@@ -234,8 +322,22 @@ class IMUManager:
                 
                 self.imu_data['MAGx'] = MAGx_final
         except OSError as e:
-           print(f"I2C Communication Error: {e}")
-           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+            # Rate limit error messages
+            error_key = "MMC5983MA_MAG_X"
+            current_time = time.time()
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                _error_last_logged[error_key] = current_time
+                # Detect error type and provide context
+                if hasattr(e, 'errno'):
+                    if e.errno == 121:  # Remote I/O error
+                        error_desc = "Device not responding (check power/connections)"
+                    elif e.errno == 5:  # Input/output error
+                        error_desc = "I/O error (check I2C bus/connections)"
+                    else:
+                        error_desc = f"OS Error {e.errno}: {e}"
+                else:
+                    error_desc = str(e)
+                print(f"IMU Error: MMC5983MA Magnetometer X-axis read failed (0x{MMC5983MA_ADDRESS:02X}) - {error_desc}")
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -260,8 +362,22 @@ class IMUManager:
                 
                 self.imu_data['MAGy'] = MAGy_final
         except OSError as e:
-           print(f"I2C Communication Error: {e}")
-           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+            # Rate limit error messages
+            error_key = "MMC5983MA_MAG_Y"
+            current_time = time.time()
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                _error_last_logged[error_key] = current_time
+                # Detect error type and provide context
+                if hasattr(e, 'errno'):
+                    if e.errno == 121:  # Remote I/O error
+                        error_desc = "Device not responding (check power/connections)"
+                    elif e.errno == 5:  # Input/output error
+                        error_desc = "I/O error (check I2C bus/connections)"
+                    else:
+                        error_desc = f"OS Error {e.errno}: {e}"
+                else:
+                    error_desc = str(e)
+                print(f"IMU Error: MMC5983MA Magnetometer Y-axis read failed (0x{MMC5983MA_ADDRESS:02X}) - {error_desc}")
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -286,8 +402,22 @@ class IMUManager:
                 
                 self.imu_data['MAGz'] = MAGz_final
         except OSError as e:
-           print(f"I2C Communication Error: {e}")
-           print(f"Check connections and address (0x{MMC5983MA_ADDRESS:02X})")
+            # Rate limit error messages
+            error_key = "MMC5983MA_MAG_Z"
+            current_time = time.time()
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                _error_last_logged[error_key] = current_time
+                # Detect error type and provide context
+                if hasattr(e, 'errno'):
+                    if e.errno == 121:  # Remote I/O error
+                        error_desc = "Device not responding (check power/connections)"
+                    elif e.errno == 5:  # Input/output error
+                        error_desc = "I/O error (check I2C bus/connections)"
+                    else:
+                        error_desc = f"OS Error {e.errno}: {e}"
+                else:
+                    error_desc = str(e)
+                print(f"IMU Error: MMC5983MA Magnetometer Z-axis read failed (0x{MMC5983MA_ADDRESS:02X}) - {error_desc}")
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
         

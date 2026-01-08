@@ -34,7 +34,7 @@ def main():
             
         # Keep main thread alive and handle shutdown gracefully
         while True:
-            Blue.toggle()
+            #Blue.toggle()
             sleep(1)
             
     except KeyboardInterrupt:
