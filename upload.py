@@ -153,14 +153,23 @@ class CloudFunctionClient:
             os.makedirs(offline_dir, exist_ok=True)
             
             # Create filename with timestamp
-            filename = f"offline_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            filename = f"offline_data_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
             filepath = os.path.join(offline_dir, filename)
+            
+            # Get sample timestamp info from payload for logging
+            timestamp_info = ""
+            if data and 'payload' in data and len(data['payload']) > 0:
+                first_timestamp = data['payload'][0].get('timestamp', 'N/A')
+                last_timestamp = data['payload'][-1].get('timestamp', 'N/A')
+                gps_fix_count = sum(1 for p in data['payload'] if p.get('gps_fix', False))
+                total_count = len(data['payload'])
+                timestamp_info = f" | Timestamps: {first_timestamp} to {last_timestamp} | GPS fix: {gps_fix_count}/{total_count}"
             
             # Save to file
             with open(filepath, 'w') as f:
                 json.dump(data, f, indent=2)
                 
-            print(f"{time.ctime(time.time())}:💾 Data saved to disk: {filepath}")
+            print(f"{time.ctime(time.time())}:💾 Data saved to disk: {filepath}{timestamp_info}")
             
         except Exception as e:
             print(f"{time.ctime(time.time())}:❌ Failed to save to disk: {e}")

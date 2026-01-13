@@ -235,9 +235,10 @@ class Session:
         gps_check_counter = 0
         gps_check_interval = 10  # Check GPS health every 10 loops
         log_performance = 0 #log perfomance once a minute
+        previous_timestamp_source = None  # Track timestamp source transitions
         # Set session start time here when run() starts - time should be correct by now
         if self.upload_class.session_start_time is None:
-         self.upload_class.session_start_time = datetime.now()
+         self.upload_class.session_start_time = datetime.utcnow()
          print(f"{time.ctime(time.time())}:📅 Session start time set to: {self.upload_class.session_start_time.isoformat()}")
         
         while self.running:
@@ -321,11 +322,33 @@ class Session:
                 if not self.check_imu_health():
                     print(f"{time.ctime(time.time())}:IMU health check failed - continuing without IMU data")
                 
-            snap_time = datetime.now()
-                
+            # Use GPS datetime if available and valid, otherwise use system time (both in UTC)
+            if (gps_data and 
+                gps_data.get('fix_status') != 'No Fix' and 
+                gps_data.get('datetime_utc') is not None):
+                # GPS time is available and valid (already UTC)
+                snap_time = gps_data['datetime_utc']
+                timestamp_source = "GPS"
+            else:
+                # Fallback to system time in UTC
+                snap_time = datetime.utcnow()
+                timestamp_source = "SYSTEM"
+            
+            # Log timestamp source transitions (SYSTEM -> GPS or GPS -> SYSTEM)
+            if previous_timestamp_source is not None and previous_timestamp_source != timestamp_source:
+                print(f"{time.ctime(time.time())}:🔄 Timestamp source changed: {previous_timestamp_source} → {timestamp_source} | Time: {snap_time.isoformat()}")
+            elif previous_timestamp_source is None:
+                # First iteration - log initial timestamp source
+                print(f"{time.ctime(time.time())}:🕐 Initial timestamp source: {timestamp_source} | Time: {snap_time.isoformat()}")
+            
+            previous_timestamp_source = timestamp_source
+            
             self.add_payload_to_batch(snap_time, pulses, gps_data, imu_data, image)
             log_performance += 1
-            if log_performance ==60:
+            
+            # Log timestamp source periodically (every 60 iterations to avoid spam)
+            if log_performance == 60:
+                print(f"{time.ctime(time.time())}:🕐 Using {timestamp_source} timestamp: {snap_time.isoformat()}")
                 log_system_status()
                 log_performance = 0
             sleep(self.interval)

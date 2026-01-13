@@ -30,6 +30,8 @@ lock = threading.Lock()
 
 # Rate limiting for error messages (prevent log spam)
 _error_last_logged = {}  # Track last error time per sensor/axis
+_error_counters = {}  # Track error counts per sensor/axis per window
+_error_type_counters = {}  # Track error counts by error type per sensor/axis
 _error_rate_limit_seconds = 10  # Only log same error once per 10 seconds
 
 class IMUManager:
@@ -137,22 +139,53 @@ class IMUManager:
                 self.imu_data['ACCx'] = acc_combined
                 self.imu_data['ACCx_mg_unit'] = acc_combined *acc_sensitivity
         except OSError as e:
-            # Rate limit error messages
+            # Rate limit error messages and track error counts
             error_key = "LSM6DSL_ACC_X"
             current_time = time.time()
-            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
-                _error_last_logged[error_key] = current_time
-                # Detect error type and provide context
-                if hasattr(e, 'errno'):
-                    if e.errno == 121:  # Remote I/O error
-                        error_desc = "Device not responding (check power/connections)"
-                    elif e.errno == 5:  # Input/output error
-                        error_desc = "I/O error (check I2C bus/connections)"
-                    else:
-                        error_desc = f"OS Error {e.errno}: {e}"
+            
+            # Detect error type
+            if hasattr(e, 'errno'):
+                if e.errno == 121:  # Remote I/O error
+                    error_type = "Device not responding"
+                    error_desc = "Device not responding (check power/connections)"
+                elif e.errno == 5:  # Input/output error
+                    error_type = "I/O error"
+                    error_desc = "I/O error (check I2C bus/connections)"
                 else:
-                    error_desc = str(e)
-                print(f"IMU Error: LSM6DSL Accelerometer X-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
+                    error_type = f"OS Error {e.errno}"
+                    error_desc = f"OS Error {e.errno}: {e}"
+            else:
+                error_type = "Unknown"
+                error_desc = str(e)
+            
+            # Initialize counters if needed
+            if error_key not in _error_counters:
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
+            
+            # Increment error counter
+            _error_counters[error_key] += 1
+            if error_type not in _error_type_counters[error_key]:
+                _error_type_counters[error_key][error_type] = 0
+            _error_type_counters[error_key][error_type] += 1
+            
+            # Log if rate limit window has expired
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                error_count = _error_counters[error_key]
+                
+                # Build error message with count and type breakdown
+                if error_count == 1:
+                    count_msg = ""
+                else:
+                    type_breakdown = ", ".join([f"{k}: {v}" for k, v in _error_type_counters[error_key].items()])
+                    count_msg = f" [{error_count} errors in last {_error_rate_limit_seconds}s: {type_breakdown}]"
+                
+                print(f"IMU Error: LSM6DSL Accelerometer X-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}{count_msg}")
+                
+                # Reset counters for next window
+                _error_last_logged[error_key] = current_time
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -166,22 +199,53 @@ class IMUManager:
                 self.imu_data['ACCy'] = acc_combined
                 self.imu_data['ACCy_mg_unit'] = acc_combined *acc_sensitivity
         except OSError as e:
-            # Rate limit error messages
+            # Rate limit error messages and track error counts
             error_key = "LSM6DSL_ACC_Y"
             current_time = time.time()
-            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
-                _error_last_logged[error_key] = current_time
-                # Detect error type and provide context
-                if hasattr(e, 'errno'):
-                    if e.errno == 121:  # Remote I/O error
-                        error_desc = "Device not responding (check power/connections)"
-                    elif e.errno == 5:  # Input/output error
-                        error_desc = "I/O error (check I2C bus/connections)"
-                    else:
-                        error_desc = f"OS Error {e.errno}: {e}"
+            
+            # Detect error type
+            if hasattr(e, 'errno'):
+                if e.errno == 121:  # Remote I/O error
+                    error_type = "Device not responding"
+                    error_desc = "Device not responding (check power/connections)"
+                elif e.errno == 5:  # Input/output error
+                    error_type = "I/O error"
+                    error_desc = "I/O error (check I2C bus/connections)"
                 else:
-                    error_desc = str(e)
-                print(f"IMU Error: LSM6DSL Accelerometer Y-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
+                    error_type = f"OS Error {e.errno}"
+                    error_desc = f"OS Error {e.errno}: {e}"
+            else:
+                error_type = "Unknown"
+                error_desc = str(e)
+            
+            # Initialize counters if needed
+            if error_key not in _error_counters:
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
+            
+            # Increment error counter
+            _error_counters[error_key] += 1
+            if error_type not in _error_type_counters[error_key]:
+                _error_type_counters[error_key][error_type] = 0
+            _error_type_counters[error_key][error_type] += 1
+            
+            # Log if rate limit window has expired
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                error_count = _error_counters[error_key]
+                
+                # Build error message with count and type breakdown
+                if error_count == 1:
+                    count_msg = ""
+                else:
+                    type_breakdown = ", ".join([f"{k}: {v}" for k, v in _error_type_counters[error_key].items()])
+                    count_msg = f" [{error_count} errors in last {_error_rate_limit_seconds}s: {type_breakdown}]"
+                
+                print(f"IMU Error: LSM6DSL Accelerometer Y-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}{count_msg}")
+                
+                # Reset counters for next window
+                _error_last_logged[error_key] = current_time
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -195,22 +259,53 @@ class IMUManager:
                 self.imu_data['ACCz'] = acc_combined
                 self.imu_data['ACCz_mg_unit'] = acc_combined *acc_sensitivity
         except OSError as e:
-            # Rate limit error messages
+            # Rate limit error messages and track error counts
             error_key = "LSM6DSL_ACC_Z"
             current_time = time.time()
-            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
-                _error_last_logged[error_key] = current_time
-                # Detect error type and provide context
-                if hasattr(e, 'errno'):
-                    if e.errno == 121:  # Remote I/O error
-                        error_desc = "Device not responding (check power/connections)"
-                    elif e.errno == 5:  # Input/output error
-                        error_desc = "I/O error (check I2C bus/connections)"
-                    else:
-                        error_desc = f"OS Error {e.errno}: {e}"
+            
+            # Detect error type
+            if hasattr(e, 'errno'):
+                if e.errno == 121:  # Remote I/O error
+                    error_type = "Device not responding"
+                    error_desc = "Device not responding (check power/connections)"
+                elif e.errno == 5:  # Input/output error
+                    error_type = "I/O error"
+                    error_desc = "I/O error (check I2C bus/connections)"
                 else:
-                    error_desc = str(e)
-                print(f"IMU Error: LSM6DSL Accelerometer Z-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
+                    error_type = f"OS Error {e.errno}"
+                    error_desc = f"OS Error {e.errno}: {e}"
+            else:
+                error_type = "Unknown"
+                error_desc = str(e)
+            
+            # Initialize counters if needed
+            if error_key not in _error_counters:
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
+            
+            # Increment error counter
+            _error_counters[error_key] += 1
+            if error_type not in _error_type_counters[error_key]:
+                _error_type_counters[error_key][error_type] = 0
+            _error_type_counters[error_key][error_type] += 1
+            
+            # Log if rate limit window has expired
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                error_count = _error_counters[error_key]
+                
+                # Build error message with count and type breakdown
+                if error_count == 1:
+                    count_msg = ""
+                else:
+                    type_breakdown = ", ".join([f"{k}: {v}" for k, v in _error_type_counters[error_key].items()])
+                    count_msg = f" [{error_count} errors in last {_error_rate_limit_seconds}s: {type_breakdown}]"
+                
+                print(f"IMU Error: LSM6DSL Accelerometer Z-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}{count_msg}")
+                
+                # Reset counters for next window
+                _error_last_logged[error_key] = current_time
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -224,22 +319,53 @@ class IMUManager:
                 self.imu_data['GYRx'] = gyr_combined
                 self.imu_data['GYRx_dps'] = gyr_combined *gyro_sensativity
         except OSError as e:
-            # Rate limit error messages
+            # Rate limit error messages and track error counts
             error_key = "LSM6DSL_GYR_X"
             current_time = time.time()
-            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
-                _error_last_logged[error_key] = current_time
-                # Detect error type and provide context
-                if hasattr(e, 'errno'):
-                    if e.errno == 121:  # Remote I/O error
-                        error_desc = "Device not responding (check power/connections)"
-                    elif e.errno == 5:  # Input/output error
-                        error_desc = "I/O error (check I2C bus/connections)"
-                    else:
-                        error_desc = f"OS Error {e.errno}: {e}"
+            
+            # Detect error type
+            if hasattr(e, 'errno'):
+                if e.errno == 121:  # Remote I/O error
+                    error_type = "Device not responding"
+                    error_desc = "Device not responding (check power/connections)"
+                elif e.errno == 5:  # Input/output error
+                    error_type = "I/O error"
+                    error_desc = "I/O error (check I2C bus/connections)"
                 else:
-                    error_desc = str(e)
-                print(f"IMU Error: LSM6DSL Gyroscope X-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
+                    error_type = f"OS Error {e.errno}"
+                    error_desc = f"OS Error {e.errno}: {e}"
+            else:
+                error_type = "Unknown"
+                error_desc = str(e)
+            
+            # Initialize counters if needed
+            if error_key not in _error_counters:
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
+            
+            # Increment error counter
+            _error_counters[error_key] += 1
+            if error_type not in _error_type_counters[error_key]:
+                _error_type_counters[error_key][error_type] = 0
+            _error_type_counters[error_key][error_type] += 1
+            
+            # Log if rate limit window has expired
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                error_count = _error_counters[error_key]
+                
+                # Build error message with count and type breakdown
+                if error_count == 1:
+                    count_msg = ""
+                else:
+                    type_breakdown = ", ".join([f"{k}: {v}" for k, v in _error_type_counters[error_key].items()])
+                    count_msg = f" [{error_count} errors in last {_error_rate_limit_seconds}s: {type_breakdown}]"
+                
+                print(f"IMU Error: LSM6DSL Gyroscope X-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}{count_msg}")
+                
+                # Reset counters for next window
+                _error_last_logged[error_key] = current_time
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -253,22 +379,53 @@ class IMUManager:
             self.imu_data['GYRy'] = gyr_combined
             self.imu_data['GYRy_dps'] = gyr_combined *gyro_sensativity
       except OSError as e:
-            # Rate limit error messages
+            # Rate limit error messages and track error counts
             error_key = "LSM6DSL_GYR_Y"
             current_time = time.time()
-            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
-                _error_last_logged[error_key] = current_time
-                # Detect error type and provide context
-                if hasattr(e, 'errno'):
-                    if e.errno == 121:  # Remote I/O error
-                        error_desc = "Device not responding (check power/connections)"
-                    elif e.errno == 5:  # Input/output error
-                        error_desc = "I/O error (check I2C bus/connections)"
-                    else:
-                        error_desc = f"OS Error {e.errno}: {e}"
+            
+            # Detect error type
+            if hasattr(e, 'errno'):
+                if e.errno == 121:  # Remote I/O error
+                    error_type = "Device not responding"
+                    error_desc = "Device not responding (check power/connections)"
+                elif e.errno == 5:  # Input/output error
+                    error_type = "I/O error"
+                    error_desc = "I/O error (check I2C bus/connections)"
                 else:
-                    error_desc = str(e)
-                print(f"IMU Error: LSM6DSL Gyroscope Y-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
+                    error_type = f"OS Error {e.errno}"
+                    error_desc = f"OS Error {e.errno}: {e}"
+            else:
+                error_type = "Unknown"
+                error_desc = str(e)
+            
+            # Initialize counters if needed
+            if error_key not in _error_counters:
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
+            
+            # Increment error counter
+            _error_counters[error_key] += 1
+            if error_type not in _error_type_counters[error_key]:
+                _error_type_counters[error_key][error_type] = 0
+            _error_type_counters[error_key][error_type] += 1
+            
+            # Log if rate limit window has expired
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                error_count = _error_counters[error_key]
+                
+                # Build error message with count and type breakdown
+                if error_count == 1:
+                    count_msg = ""
+                else:
+                    type_breakdown = ", ".join([f"{k}: {v}" for k, v in _error_type_counters[error_key].items()])
+                    count_msg = f" [{error_count} errors in last {_error_rate_limit_seconds}s: {type_breakdown}]"
+                
+                print(f"IMU Error: LSM6DSL Gyroscope Y-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}{count_msg}")
+                
+                # Reset counters for next window
+                _error_last_logged[error_key] = current_time
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
       except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -282,22 +439,53 @@ class IMUManager:
                 self.imu_data['GYRz'] = gyr_combined
                 self.imu_data['GYRz_dps'] = gyr_combined *gyro_sensativity
         except OSError as e:
-            # Rate limit error messages
+            # Rate limit error messages and track error counts
             error_key = "LSM6DSL_GYR_Z"
             current_time = time.time()
-            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
-                _error_last_logged[error_key] = current_time
-                # Detect error type and provide context
-                if hasattr(e, 'errno'):
-                    if e.errno == 121:  # Remote I/O error
-                        error_desc = "Device not responding (check power/connections)"
-                    elif e.errno == 5:  # Input/output error
-                        error_desc = "I/O error (check I2C bus/connections)"
-                    else:
-                        error_desc = f"OS Error {e.errno}: {e}"
+            
+            # Detect error type
+            if hasattr(e, 'errno'):
+                if e.errno == 121:  # Remote I/O error
+                    error_type = "Device not responding"
+                    error_desc = "Device not responding (check power/connections)"
+                elif e.errno == 5:  # Input/output error
+                    error_type = "I/O error"
+                    error_desc = "I/O error (check I2C bus/connections)"
                 else:
-                    error_desc = str(e)
-                print(f"IMU Error: LSM6DSL Gyroscope Z-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}")
+                    error_type = f"OS Error {e.errno}"
+                    error_desc = f"OS Error {e.errno}: {e}"
+            else:
+                error_type = "Unknown"
+                error_desc = str(e)
+            
+            # Initialize counters if needed
+            if error_key not in _error_counters:
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
+            
+            # Increment error counter
+            _error_counters[error_key] += 1
+            if error_type not in _error_type_counters[error_key]:
+                _error_type_counters[error_key][error_type] = 0
+            _error_type_counters[error_key][error_type] += 1
+            
+            # Log if rate limit window has expired
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                error_count = _error_counters[error_key]
+                
+                # Build error message with count and type breakdown
+                if error_count == 1:
+                    count_msg = ""
+                else:
+                    type_breakdown = ", ".join([f"{k}: {v}" for k, v in _error_type_counters[error_key].items()])
+                    count_msg = f" [{error_count} errors in last {_error_rate_limit_seconds}s: {type_breakdown}]"
+                
+                print(f"IMU Error: LSM6DSL Gyroscope Z-axis read failed (0x{LSM6DSL_ADDRESS:02X}) - {error_desc}{count_msg}")
+                
+                # Reset counters for next window
+                _error_last_logged[error_key] = current_time
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")       
 
@@ -322,22 +510,53 @@ class IMUManager:
                 
                 self.imu_data['MAGx'] = MAGx_final
         except OSError as e:
-            # Rate limit error messages
+            # Rate limit error messages and track error counts
             error_key = "MMC5983MA_MAG_X"
             current_time = time.time()
-            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
-                _error_last_logged[error_key] = current_time
-                # Detect error type and provide context
-                if hasattr(e, 'errno'):
-                    if e.errno == 121:  # Remote I/O error
-                        error_desc = "Device not responding (check power/connections)"
-                    elif e.errno == 5:  # Input/output error
-                        error_desc = "I/O error (check I2C bus/connections)"
-                    else:
-                        error_desc = f"OS Error {e.errno}: {e}"
+            
+            # Detect error type
+            if hasattr(e, 'errno'):
+                if e.errno == 121:  # Remote I/O error
+                    error_type = "Device not responding"
+                    error_desc = "Device not responding (check power/connections)"
+                elif e.errno == 5:  # Input/output error
+                    error_type = "I/O error"
+                    error_desc = "I/O error (check I2C bus/connections)"
                 else:
-                    error_desc = str(e)
-                print(f"IMU Error: MMC5983MA Magnetometer X-axis read failed (0x{MMC5983MA_ADDRESS:02X}) - {error_desc}")
+                    error_type = f"OS Error {e.errno}"
+                    error_desc = f"OS Error {e.errno}: {e}"
+            else:
+                error_type = "Unknown"
+                error_desc = str(e)
+            
+            # Initialize counters if needed
+            if error_key not in _error_counters:
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
+            
+            # Increment error counter
+            _error_counters[error_key] += 1
+            if error_type not in _error_type_counters[error_key]:
+                _error_type_counters[error_key][error_type] = 0
+            _error_type_counters[error_key][error_type] += 1
+            
+            # Log if rate limit window has expired
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                error_count = _error_counters[error_key]
+                
+                # Build error message with count and type breakdown
+                if error_count == 1:
+                    count_msg = ""
+                else:
+                    type_breakdown = ", ".join([f"{k}: {v}" for k, v in _error_type_counters[error_key].items()])
+                    count_msg = f" [{error_count} errors in last {_error_rate_limit_seconds}s: {type_breakdown}]"
+                
+                print(f"IMU Error: MMC5983MA Magnetometer X-axis read failed (0x{MMC5983MA_ADDRESS:02X}) - {error_desc}{count_msg}")
+                
+                # Reset counters for next window
+                _error_last_logged[error_key] = current_time
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -362,22 +581,53 @@ class IMUManager:
                 
                 self.imu_data['MAGy'] = MAGy_final
         except OSError as e:
-            # Rate limit error messages
+            # Rate limit error messages and track error counts
             error_key = "MMC5983MA_MAG_Y"
             current_time = time.time()
-            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
-                _error_last_logged[error_key] = current_time
-                # Detect error type and provide context
-                if hasattr(e, 'errno'):
-                    if e.errno == 121:  # Remote I/O error
-                        error_desc = "Device not responding (check power/connections)"
-                    elif e.errno == 5:  # Input/output error
-                        error_desc = "I/O error (check I2C bus/connections)"
-                    else:
-                        error_desc = f"OS Error {e.errno}: {e}"
+            
+            # Detect error type
+            if hasattr(e, 'errno'):
+                if e.errno == 121:  # Remote I/O error
+                    error_type = "Device not responding"
+                    error_desc = "Device not responding (check power/connections)"
+                elif e.errno == 5:  # Input/output error
+                    error_type = "I/O error"
+                    error_desc = "I/O error (check I2C bus/connections)"
                 else:
-                    error_desc = str(e)
-                print(f"IMU Error: MMC5983MA Magnetometer Y-axis read failed (0x{MMC5983MA_ADDRESS:02X}) - {error_desc}")
+                    error_type = f"OS Error {e.errno}"
+                    error_desc = f"OS Error {e.errno}: {e}"
+            else:
+                error_type = "Unknown"
+                error_desc = str(e)
+            
+            # Initialize counters if needed
+            if error_key not in _error_counters:
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
+            
+            # Increment error counter
+            _error_counters[error_key] += 1
+            if error_type not in _error_type_counters[error_key]:
+                _error_type_counters[error_key][error_type] = 0
+            _error_type_counters[error_key][error_type] += 1
+            
+            # Log if rate limit window has expired
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                error_count = _error_counters[error_key]
+                
+                # Build error message with count and type breakdown
+                if error_count == 1:
+                    count_msg = ""
+                else:
+                    type_breakdown = ", ".join([f"{k}: {v}" for k, v in _error_type_counters[error_key].items()])
+                    count_msg = f" [{error_count} errors in last {_error_rate_limit_seconds}s: {type_breakdown}]"
+                
+                print(f"IMU Error: MMC5983MA Magnetometer Y-axis read failed (0x{MMC5983MA_ADDRESS:02X}) - {error_desc}{count_msg}")
+                
+                # Reset counters for next window
+                _error_last_logged[error_key] = current_time
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
 
@@ -402,22 +652,53 @@ class IMUManager:
                 
                 self.imu_data['MAGz'] = MAGz_final
         except OSError as e:
-            # Rate limit error messages
+            # Rate limit error messages and track error counts
             error_key = "MMC5983MA_MAG_Z"
             current_time = time.time()
-            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
-                _error_last_logged[error_key] = current_time
-                # Detect error type and provide context
-                if hasattr(e, 'errno'):
-                    if e.errno == 121:  # Remote I/O error
-                        error_desc = "Device not responding (check power/connections)"
-                    elif e.errno == 5:  # Input/output error
-                        error_desc = "I/O error (check I2C bus/connections)"
-                    else:
-                        error_desc = f"OS Error {e.errno}: {e}"
+            
+            # Detect error type
+            if hasattr(e, 'errno'):
+                if e.errno == 121:  # Remote I/O error
+                    error_type = "Device not responding"
+                    error_desc = "Device not responding (check power/connections)"
+                elif e.errno == 5:  # Input/output error
+                    error_type = "I/O error"
+                    error_desc = "I/O error (check I2C bus/connections)"
                 else:
-                    error_desc = str(e)
-                print(f"IMU Error: MMC5983MA Magnetometer Z-axis read failed (0x{MMC5983MA_ADDRESS:02X}) - {error_desc}")
+                    error_type = f"OS Error {e.errno}"
+                    error_desc = f"OS Error {e.errno}: {e}"
+            else:
+                error_type = "Unknown"
+                error_desc = str(e)
+            
+            # Initialize counters if needed
+            if error_key not in _error_counters:
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
+            
+            # Increment error counter
+            _error_counters[error_key] += 1
+            if error_type not in _error_type_counters[error_key]:
+                _error_type_counters[error_key][error_type] = 0
+            _error_type_counters[error_key][error_type] += 1
+            
+            # Log if rate limit window has expired
+            if error_key not in _error_last_logged or (current_time - _error_last_logged[error_key]) >= _error_rate_limit_seconds:
+                error_count = _error_counters[error_key]
+                
+                # Build error message with count and type breakdown
+                if error_count == 1:
+                    count_msg = ""
+                else:
+                    type_breakdown = ", ".join([f"{k}: {v}" for k, v in _error_type_counters[error_key].items()])
+                    count_msg = f" [{error_count} errors in last {_error_rate_limit_seconds}s: {type_breakdown}]"
+                
+                print(f"IMU Error: MMC5983MA Magnetometer Z-axis read failed (0x{MMC5983MA_ADDRESS:02X}) - {error_desc}{count_msg}")
+                
+                # Reset counters for next window
+                _error_last_logged[error_key] = current_time
+                _error_counters[error_key] = 0
+                _error_type_counters[error_key] = {}
         except Exception as e:
            print(f"Unexpected error: {type(e).__name__}: {e}")
         

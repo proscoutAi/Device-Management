@@ -31,6 +31,7 @@ class GPSManager:
                 'vdop': 0.0,
                 'time_utc': 'N/A',
                 'date': 'N/A',
+                'datetime_utc': None,  # GPS datetime object (UTC)
                 'last_update': 'N/A',
                 'satellite_systems': [],
                 'signal_quality': 'Unknown',
@@ -66,12 +67,17 @@ class GPSManager:
             try:
                 if 'RMC' in sentence:
                     self.parse_rmc(sentence)
+                elif 'ZDA' in sentence:
+                    self.parse_zda(sentence)
                 elif 'GGA' in sentence:
                     self.parse_gga(sentence)
                 elif 'GSA' in sentence:
                     self.parse_gsa(sentence)
                 elif 'GSV' in sentence:
                     self.parse_gsv(sentence)
+                
+                # Update GPS datetime whenever we have valid date and time
+                self._update_gps_datetime()
                 
                 # Update timestamp whenever we get new data
                 self.gps_data['data_timestamp'] = time.time()
@@ -125,13 +131,59 @@ class GPSManager:
                 if course_str:
                     self.gps_data['course'] = float(course_str)
                 
-                # Date
+                # Date (RMC format: DDMMYY)
                 date_str = parts[9]
                 if len(date_str) >= 6:
-                    self.gps_data['date'] = f"20{date_str[4:6]}-{date_str[2:4]}-{date_str[:2]}"
+                    # RMC date format: DDMMYY, convert to YYYY-MM-DD
+                    day = date_str[:2]
+                    month = date_str[2:4]
+                    year = f"20{date_str[4:6]}"  # Assume 2000s
+                    self.gps_data['date'] = f"{year}-{month}-{day}"
                 
         except Exception as e:
             pass
+    
+    def parse_zda(self, nmea_sentence):
+        """Parse ZDA sentence (Time and Date) - more reliable than RMC for time/date"""
+        try:
+            parts = nmea_sentence.split(',')
+            if len(parts) >= 5:
+                # Time: hhmmss.ss
+                time_str = parts[1]
+                if len(time_str) >= 6:
+                    hours = time_str[:2]
+                    minutes = time_str[2:4]
+                    seconds = time_str[4:6]
+                    self.gps_data['time_utc'] = f"{hours}:{minutes}:{seconds}"
+                
+                # Date: day, month, year (full 4-digit year)
+                if len(parts) >= 5 and parts[2] and parts[3] and parts[4]:
+                    day = parts[2].zfill(2)  # Ensure 2 digits
+                    month = parts[3].zfill(2)  # Ensure 2 digits
+                    year = parts[4]  # Full 4-digit year
+                    if day and month and year:
+                        self.gps_data['date'] = f"{year}-{month}-{day}"
+                
+        except Exception as e:
+            pass
+    
+    def _update_gps_datetime(self):
+        """Update GPS datetime object from date and time_utc strings"""
+        try:
+            if (self.gps_data.get('time_utc') and 
+                self.gps_data.get('time_utc') != 'N/A' and
+                self.gps_data.get('date') and 
+                self.gps_data.get('date') != 'N/A'):
+                
+                # Combine date and time
+                datetime_str = f"{self.gps_data['date']} {self.gps_data['time_utc']}"
+                # Parse as UTC datetime
+                self.gps_data['datetime_utc'] = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+            else:
+                self.gps_data['datetime_utc'] = None
+        except Exception as e:
+            # If parsing fails, set to None
+            self.gps_data['datetime_utc'] = None
 
     def parse_gga(self, nmea_sentence):
         """Parse GGA sentence (works with GPGGA, GNGGA, etc.)"""
