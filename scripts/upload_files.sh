@@ -1,6 +1,6 @@
 #!/bin/bash
-# Script to interactively upload files from V3 folder to remote server
-# Usage: ./upload_calibration.sh
+# Script to interactively upload files to remote server
+# Usage: ./upload_files.sh
 # 
 # This script runs in a loop, prompting you to enter a file path each time.
 # Files are uploaded to the remote server, preserving the folder structure.
@@ -8,11 +8,10 @@
 
 # Configuration
 REMOTE_USER="proscout"
-REMOTE_HOST="100.74.134.30"
-REMOTE_BASE_PATH="/home/proscout/ProScout-master/Device-Management"
-LOCAL_SOURCE_DIR="V3"
+REMOTE_HOST="100.93.142.6"
+REMOTE_BASE_PATH="/home/proscout/ProScout-master/device-manager"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_V3_PATH="${SCRIPT_DIR}/${LOCAL_SOURCE_DIR}"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # SSH ControlMaster settings to keep connection open
 SSH_CONTROL_PATH="${HOME}/.ssh/control_%h_%p_%r"
@@ -29,35 +28,42 @@ NC='\033[0m' # No Color
 # Function to upload a single file
 upload_file() {
     local file_path="$1"
+    local absolute_path=""
     
     # Resolve absolute path
-    if [[ "$file_path" != /* ]]; then
-        # Relative path - check if it's relative to V3 or current directory
-        if [[ -f "${LOCAL_V3_PATH}/${file_path}" ]]; then
-            file_path="${LOCAL_V3_PATH}/${file_path}"
+    if [[ "$file_path" == /* ]]; then
+        # Absolute path provided
+        absolute_path="$file_path"
+    else
+        # Relative path - try relative to project root first, then script directory
+        if [[ -f "${PROJECT_ROOT}/${file_path}" ]]; then
+            absolute_path="${PROJECT_ROOT}/${file_path}"
         elif [[ -f "${SCRIPT_DIR}/${file_path}" ]]; then
-            file_path="${SCRIPT_DIR}/${file_path}"
+            absolute_path="${SCRIPT_DIR}/${file_path}"
+        elif [[ -f "${file_path}" ]]; then
+            absolute_path="$(cd "$(dirname "${file_path}")" && pwd)/$(basename "${file_path}")"
         else
-            file_path="${file_path}"
+            echo -e "${RED}✗ Error: File not found: ${file_path}${NC}"
+            return 1
         fi
     fi
     
     # Check if file exists
-    if [ ! -f "${file_path}" ]; then
-        echo -e "${RED}✗ Error: File not found: ${file_path}${NC}"
+    if [ ! -f "${absolute_path}" ]; then
+        echo -e "${RED}✗ Error: File not found: ${absolute_path}${NC}"
         return 1
     fi
     
-    # Check if file is within V3 directory
-    if [[ "$file_path" != "${LOCAL_V3_PATH}"* ]]; then
-        echo -e "${RED}✗ Error: File must be within the V3 directory${NC}"
-        echo -e "${YELLOW}  File: ${file_path}${NC}"
-        echo -e "${YELLOW}  Expected base: ${LOCAL_V3_PATH}${NC}"
+    # Check if file is within project root
+    if [[ "$absolute_path" != "${PROJECT_ROOT}"* ]]; then
+        echo -e "${RED}✗ Error: File must be within the Device-Management project directory${NC}"
+        echo -e "${YELLOW}  File: ${absolute_path}${NC}"
+        echo -e "${YELLOW}  Project root: ${PROJECT_ROOT}${NC}"
         return 1
     fi
     
-    # Calculate relative path from V3
-    local relative_path="${file_path#${LOCAL_V3_PATH}/}"
+    # Calculate relative path from project root
+    local relative_path="${absolute_path#${PROJECT_ROOT}/}"
     local remote_dir="${REMOTE_BASE_PATH}/$(dirname "${relative_path}")"
     local remote_file="${REMOTE_BASE_PATH}/${relative_path}"
     
@@ -67,7 +73,7 @@ upload_file() {
     # Upload the file
     echo -e "${CYAN}[$(date +%H:%M:%S)] Uploading: ${relative_path}${NC}"
     rsync -avz --progress -e "ssh ${SSH_OPTS}" \
-        "${file_path}" \
+        "${absolute_path}" \
         "${REMOTE_USER}@${REMOTE_HOST}:${remote_file}"
     
     if [ $? -eq 0 ]; then
@@ -110,21 +116,15 @@ cleanup() {
 # Trap Ctrl+C and cleanup
 trap cleanup SIGINT SIGTERM
 
-# Check if V3 directory exists
-if [ ! -d "${LOCAL_V3_PATH}" ]; then
-    echo -e "${RED}Error: ${LOCAL_V3_PATH} directory not found!${NC}"
-    exit 1
-fi
-
 # Setup SSH connection
 setup_ssh_connection
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}Interactive file uploader${NC}"
-echo -e "${BLUE}Source directory: ${LOCAL_V3_PATH}${NC}"
+echo -e "${BLUE}Project root: ${PROJECT_ROOT}${NC}"
 echo -e "${BLUE}Remote base: ${REMOTE_BASE_PATH}${NC}"
-echo -e "${BLUE}Enter file path relative to V3 folder (e.g., calibrate/IMU_calibration.py)${NC}"
-echo -e "${BLUE}Or enter 'quit'/'exit' to stop${NC}"
+echo -e "${BLUE}Enter file path relative to project root (e.g., calibrate/IMU_calibration.py)${NC}"
+echo -e "${BLUE}Or enter absolute path or 'quit'/'exit' to stop${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 

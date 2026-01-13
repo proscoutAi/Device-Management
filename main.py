@@ -4,6 +4,8 @@ import uuid
 from time import sleep
 
 from gpiozero import LED, Button
+
+from docking import DockingManager
 from leds_manager import LedsManagerService, SystemState
 from session import Session
 
@@ -22,6 +24,10 @@ def main():
         print(f"{time.ctime(time.time())}: leds manager service initialized ")
         led_manager_service.set_system_state(SystemState.ON)
         print(f"{time.ctime(time.time())}: System state set to ON")
+        print(f"{time.ctime(time.time())}: Starting docking manager")
+        docking_manager = DockingManager()
+        docking_manager.run()
+        print(f"{time.ctime(time.time())}: Docking manager started")
         print(f"{time.ctime(time.time())}: Trying to start main application!!!!!")
         session = Session()
         if session.start():
