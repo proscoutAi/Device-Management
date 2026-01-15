@@ -201,8 +201,28 @@ class CloudFunctionClient:
                             os.remove(filepath)
                             continue
                         
-                        with open(filepath, 'r') as f:
-                            data = json.load(f)
+                        # Try to load JSON and catch formatting errors
+                        try:
+                            with open(filepath, 'r') as f:
+                                data = json.load(f)
+                        except json.JSONDecodeError as json_err:
+                            # JSON formatting error - move to problematic directory
+                            print(f"{time.ctime(time.time())}:❌ JSON formatting error in {filename}: {json_err}")
+                            problematic_dir = os.path.join(offline_dir, "problematic")
+                            os.makedirs(problematic_dir, exist_ok=True)
+                            try:
+                                problematic_path = os.path.join(problematic_dir, filename)
+                                os.rename(filepath, problematic_path)
+                                print(f"{time.ctime(time.time())}:📦 Moved corrupted file to problematic directory: {filename}")
+                            except Exception as move_err:
+                                print(f"{time.ctime(time.time())}:❌ Failed to move file {filename}: {move_err}")
+                                # If move fails, delete it
+                                try:
+                                    os.remove(filepath)
+                                    print(f"{time.ctime(time.time())}:🗑️ Deleted corrupted file: {filename}")
+                                except:
+                                    pass
+                            continue  # Skip to next file
                         
                         print(f"{time.ctime(time.time())}:📤 Uploading offline data: {filename}")
                         
@@ -247,10 +267,21 @@ class CloudFunctionClient:
                                         time.sleep(2 ** attempt)  # Exponential backoff
                                     
                             except json.JSONDecodeError as e:
-                                print(f"{time.ctime(time.time())}:❌ Corrupted JSON file {filename}: {e}")
-                                print(f"{time.ctime(time.time())}:🗑️ Deleting corrupted file: {filename}")
-                                os.remove(filepath)  # Delete corrupted file
-                                continue  # Skip to next file
+                                # This shouldn't happen here since we check earlier, but handle it anyway
+                                print(f"{time.ctime(time.time())}:❌ JSON decode error during upload for {filename}: {e}")
+                                problematic_dir = os.path.join(offline_dir, "problematic")
+                                os.makedirs(problematic_dir, exist_ok=True)
+                                try:
+                                    problematic_path = os.path.join(problematic_dir, filename)
+                                    os.rename(filepath, problematic_path)
+                                    print(f"{time.ctime(time.time())}:📦 Moved corrupted file to problematic directory: {filename}")
+                                except Exception as move_err:
+                                    try:
+                                        os.remove(filepath)
+                                        print(f"{time.ctime(time.time())}:🗑️ Deleted corrupted file: {filename}")
+                                    except:
+                                        pass
+                                break  # Exit retry loop and continue to next file
                             except (requests.exceptions.ConnectionError, 
                                     requests.exceptions.ChunkedEncodingError,
                                     requests.exceptions.HTTPError) as e:
@@ -280,8 +311,27 @@ class CloudFunctionClient:
                         time.sleep(1)  # Brief pause between uploads
                         
                     except Exception as e:
-                        print(f"{time.ctime(time.time())}:❌ Error processing offline file {filename}: {e}")
-                        time.sleep(5)  # Wait before trying next file
+                        # Catch any other unexpected errors (file I/O, etc.)
+                        error_msg = str(e)
+                        # Check if it's a JSON-related error that wasn't caught earlier
+                        if "JSON" in error_msg or "Expecting" in error_msg or "delimiter" in error_msg or "JSONDecodeError" in error_msg:
+                            print(f"{time.ctime(time.time())}:❌ JSON formatting error in {filename}: {e}")
+                            problematic_dir = os.path.join(offline_dir, "problematic")
+                            os.makedirs(problematic_dir, exist_ok=True)
+                            try:
+                                problematic_path = os.path.join(problematic_dir, filename)
+                                os.rename(filepath, problematic_path)
+                                print(f"{time.ctime(time.time())}:📦 Moved corrupted file to problematic directory: {filename}")
+                            except Exception as move_err:
+                                print(f"{time.ctime(time.time())}:❌ Failed to move file {filename}: {move_err}")
+                                try:
+                                    os.remove(filepath)
+                                    print(f"{time.ctime(time.time())}:🗑️ Deleted corrupted file: {filename}")
+                                except:
+                                    pass
+                        else:
+                            print(f"{time.ctime(time.time())}:❌ Error processing offline file {filename}: {e}")
+                        time.sleep(2)  # Brief wait before trying next file
                         
                 time.sleep(self.offline_upload_sleep_interval)
                 
