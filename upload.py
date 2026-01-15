@@ -195,13 +195,20 @@ class CloudFunctionClient:
                 for filename in sorted(files):  # Process files in order
                     filepath = os.path.join(offline_dir, filename)
                     try:
+                        # Check if file is 0 bytes or empty before processing
+                        if os.path.getsize(filepath) == 0:
+                            print(f"{time.ctime(time.time())}:🗑️ Deleting 0-byte file: {filename}")
+                            os.remove(filepath)
+                            continue
+                        
                         with open(filepath, 'r') as f:
                             data = json.load(f)
                         
                         print(f"{time.ctime(time.time())}:📤 Uploading offline data: {filename}")
                         
                         if len(data) == 0:
-                            #currupted file. delete and continue
+                            #corrupted file. delete and continue
+                            print(f"{time.ctime(time.time())}:🗑️ Deleting empty data file: {filename}")
                             os.remove(filepath)
                             continue
                         
@@ -267,8 +274,8 @@ class CloudFunctionClient:
                                     pass
                         
                         if not upload_success:
-                            print(f"{time.ctime(time.time())}:💔 All upload attempts failed for {filename}, will retry later")
-                            break  # Stop processing more files, will try again in next cycle
+                            print(f"{time.ctime(time.time())}:💔 All upload attempts failed for {filename}, skipping and continuing to next file")
+                            continue  # Skip this file and continue to next file
                             
                         time.sleep(1)  # Brief pause between uploads
                         
