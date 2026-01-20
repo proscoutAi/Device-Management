@@ -40,6 +40,7 @@ interval_in_hours = sleep_interval/3600
 #flow_meter_pulses_per_litter = config.getint('Setup', 'flow_meter_pulses_per_litter')
 imu_connected = config.getboolean('Setup', 'imu')
 executor = ThreadPoolExecutor(max_workers=3)
+wifi_download_only = config.getboolean('Setup', 'wifi_download_only', fallback=False)   
 
 # Read the unique identifier (UUID or MAC address)
 with open("/home/proscout/ProScout-master/device-manager/device_id.txt", "r") as f:
@@ -69,6 +70,37 @@ def log_system_status():
     except Exception as e:
         print(f"{time.ctime(time.time())}:📊 System monitoring error: {e}")
 
+import subprocess
+import time
+
+def is_wifi_connected():
+    """Fast check - typically completes in <10ms"""
+    try:
+        result = subprocess.run(
+            ['ip', 'addr', 'show', 'wlan0'],
+            capture_output=True,
+            text=True,
+            timeout=1  # Short timeout just in case
+        )
+        return 'state UP' in result.stdout and 'inet ' in result.stdout
+    except:
+        return False
+
+# Optional: Cache the result for a few seconds
+last_wifi_check = 0
+wifi_status_cache = False
+WIFI_CHECK_INTERVAL = 5  # Check WiFi status every 5 seconds
+
+def is_wifi_connected_cached():
+    """Check WiFi status but cache result for a few seconds"""
+    global last_wifi_check, wifi_status_cache
+    
+    current_time = time.time()
+    if current_time - last_wifi_check > WIFI_CHECK_INTERVAL:
+        wifi_status_cache = is_wifi_connected()
+        last_wifi_check = current_time
+    
+    return wifi_status_cache
 
 class Session:
     """A class to represent a session of image capture"""
@@ -242,7 +274,13 @@ class Session:
          print(f"{time.ctime(time.time())}:📅 Session start time set to: {self.upload_class.session_start_time.isoformat()}")
         
         while self.running:
-        
+            
+            if wifi_download_only and  is_wifi_connected_cached():
+                print(f"{time.ctime(time.time())}:WiFi download only mode - skipping data collection")
+                time.sleep(1)
+                continue
+
+            # Get GPS data with health checking
             gps_data = get_gps_data()
             
             # Reset restart attempts if GPS is working (receiving data and has fix)
