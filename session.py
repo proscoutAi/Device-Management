@@ -275,11 +275,15 @@ class Session:
         
         while self.running:
             
+            only_print_once = True
             if wifi_download_only and  is_wifi_connected_cached():
-                print(f"{time.ctime(time.time())}:WiFi download only mode - skipping data collection")
+                if only_print_once==True:
+                    print(f"{time.ctime(time.time())}:Entering WiFi download only mode - skipping data collection")
+                    only_print_once = False
                 time.sleep(1)
                 continue
-
+            
+            only_print_once = True
             # Get GPS data with health checking
             gps_data = get_gps_data()
             
