@@ -273,9 +273,11 @@ class Session:
          self.upload_class.session_start_time = datetime.utcnow()
          print(f"{time.ctime(time.time())}:📅 Session start time set to: {self.upload_class.session_start_time.isoformat()}")
         
+        only_print_once = True
+        
         while self.running:
             
-            only_print_once = True
+            
             if wifi_download_only and  is_wifi_connected_cached():
                 if only_print_once==True:
                     print(f"{time.ctime(time.time())}:Entering WiFi download only mode - skipping data collection")
