@@ -331,7 +331,7 @@ class CloudFunctionClient:
                                     pass
                         else:
                             print(f"{time.ctime(time.time())}:❌ Error processing offline file {filename}: {e}")
-                        time.sleep(2)  # Brief wait before trying next file
+                        time.sleep(0.5)  # Brief wait before trying next file
                         
                 time.sleep(self.offline_upload_sleep_interval)
                 
