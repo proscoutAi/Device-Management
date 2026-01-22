@@ -308,7 +308,7 @@ class CloudFunctionClient:
                             print(f"{time.ctime(time.time())}:💔 All upload attempts failed for {filename}, skipping and continuing to next file")
                             continue  # Skip this file and continue to next file
                             
-                        time.sleep(1)  # Brief pause between uploads
+                        time.sleep(0.5)  # Brief pause between uploads
                         
                     except Exception as e:
                         # Catch any other unexpected errors (file I/O, etc.)
