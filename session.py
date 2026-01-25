@@ -136,7 +136,6 @@ class Session:
         # GPS health monitoring
         self.gps_restart_attempts = 0
         self.max_gps_restarts = 5
-        self.gps_stale_data_threshold = 120  # If no NMEA sentences received for 2 minutes, restart
         
     
     def flash_batch(self):
@@ -224,15 +223,10 @@ class Session:
             log_system_status()
             return self.restart_gps()
         
-        # Check data age - if data is stale (no NMEA sentences received), restart
+        # Check data age - if None, GPS manager may not be initialized
         data_age = get_gps_data_age()
         if data_age is None:
             print(f"{time.ctime(time.time())}:GPS data age is None - GPS manager may not be initialized")
-            log_system_status()
-            return self.restart_gps()
-        
-        if data_age > self.gps_stale_data_threshold:
-            print(f"{time.ctime(time.time())}:GPS data is stale ({data_age:.1f}s old, threshold: {self.gps_stale_data_threshold}s) - no NMEA sentences received")
             log_system_status()
             return self.restart_gps()
         

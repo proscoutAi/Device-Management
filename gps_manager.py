@@ -41,6 +41,8 @@ class GPSManager:
             # Threading for continuous reading
             self.data_lock = Lock()
             self.running = True
+            self.initialization_time = time.time()  # Track when GPS manager was initialized
+            self.first_nmea_received = False  # Track if we've received at least one NMEA sentence
             self.reader_thread = threading.Thread(target=self._continuous_read, daemon=True)
             self.reader_thread.start()
             
@@ -82,6 +84,8 @@ class GPSManager:
                 # Update timestamp whenever we get new data
                 self.gps_data['data_timestamp'] = time.time()
                 self.gps_data['last_update'] = datetime.now().strftime('%H:%M:%S')
+                # Mark that we've received at least one NMEA sentence
+                self.first_nmea_received = True
                 
             except Exception as e:
                 pass
@@ -292,6 +296,14 @@ class GPSManager:
         with self.data_lock:
             return time.time() - self.gps_data['data_timestamp']
     
+    def get_initialization_age(self):
+        """Get age since GPS manager initialization in seconds"""
+        return time.time() - self.initialization_time
+    
+    def has_received_nmea(self):
+        """Check if we've received at least one NMEA sentence"""
+        return self.first_nmea_received
+    
     def close(self):
         """Close serial connection and stop thread"""
         self.running = False
@@ -373,6 +385,22 @@ def get_gps_data_age():
     if gps_manager is not None:
         return gps_manager.get_data_age()
     return None
+
+def get_gps_initialization_age():
+    """Get age since GPS manager initialization"""
+    global gps_manager
+    gps_manager = get_gps_manager()
+    if gps_manager is not None:
+        return gps_manager.get_initialization_age()
+    return None
+
+def has_gps_received_nmea():
+    """Check if GPS has received at least one NMEA sentence"""
+    global gps_manager
+    gps_manager = get_gps_manager()
+    if gps_manager is not None:
+        return gps_manager.has_received_nmea()
+    return False
 
 def is_gps_healthy():
     """Check if GPS manager is healthy"""
