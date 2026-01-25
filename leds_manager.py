@@ -64,6 +64,10 @@ class IMUState(Enum):
     ONLINE = "online"
     CALIBRATING = "calibrating"
     ERROR = "error"
+
+class DownloadingState(Enum):
+    DOWNLOADING = "downloading"
+    IDLE = "idle"
     
 class BatteryState():
     def __init__(self):
@@ -93,6 +97,7 @@ class LedsManagerService:
             self.gps_state = GPSState.NO_FIX
             self.cellular_state = CellularState.NO_SIGNAL
             self.imu_state = IMUState.ERROR
+            self.downloading = DownloadingState.IDLE
             self.battery_state = BatteryState()
             self.leds_manager = LedsManager()
             LedsManagerService._initialized = True
@@ -110,6 +115,11 @@ class LedsManagerService:
     def set_gps_state(self, state: GPSState):
         if self.gps_state != state:
             self.gps_state = state
+            self._update_leds()
+    
+    def set_downloading(self, state: DownloadingState):
+        if self.downloading != state:
+            self.downloading = state
             self._update_leds()
             
     def set_cellular_state(self, state: CellularState):
@@ -134,6 +144,8 @@ class LedsManagerService:
             self.leds_manager.turn_on(LEDColor.RED)
         elif self.imu_state == IMUState.ERROR:
             self.leds_manager.turn_on(LEDColor.RED)
+        elif self.system_state == SystemState.DOWLOADING:
+            self.leds_manager.blink(LEDColor.BLUE, 100)
         elif self.docking_state == DockingState.UNDOCKED:
             self.leds_manager.turn_on(LEDColor.RED)
         elif self.gps_state == GPSState.NO_FIX:

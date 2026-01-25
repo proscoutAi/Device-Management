@@ -9,7 +9,7 @@ from threading import Thread
 
 import cv2
 import requests
-from leds_manager import CellularState, LedsManagerService
+from leds_manager import CellularState, DownloadingState, LedsManagerService
 from numpy import ndarray
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -188,9 +188,11 @@ class CloudFunctionClient:
                 files = [f for f in os.listdir(offline_dir) if f.endswith('.json')]
                 if not files:
                     time.sleep(self.offline_upload_sleep_interval)
+                    self.led_manager_service.set_downloading(DownloadingState.IDLE)
                     continue
                 
                 print(f"{time.ctime(time.time())}:📁 Found {len(files)} offline files to upload")
+                self.led_manager_service.set_downloading(DownloadingState.DOWNLOADING)
                 
                 for filename in sorted(files):  # Process files in order
                     filepath = os.path.join(offline_dir, filename)
