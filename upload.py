@@ -188,7 +188,7 @@ class CloudFunctionClient:
                 files = [f for f in os.listdir(offline_dir) if f.endswith('.json')]
                 if not files:
                     time.sleep(self.offline_upload_sleep_interval)
-                    self.led_manager_service.set_downloading(DownloadingState.IDLE)
+                    
                     continue
                 
                 print(f"{time.ctime(time.time())}:📁 Found {len(files)} offline files to upload")
@@ -334,7 +334,8 @@ class CloudFunctionClient:
                         else:
                             print(f"{time.ctime(time.time())}:❌ Error processing offline file {filename}: {e}")
                         time.sleep(0.5)  # Brief wait before trying next file
-                        
+                print(f"{time.ctime(time.time())}:📭 No offline files to upload, setting downloading state to idle")
+                self.led_manager_service.set_downloading(DownloadingState.IDLE)
                 time.sleep(self.offline_upload_sleep_interval)
                 
             except Exception as e:
