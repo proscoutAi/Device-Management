@@ -97,7 +97,7 @@ class LedsManagerService:
             self.gps_state = GPSState.NO_FIX
             self.cellular_state = CellularState.NO_SIGNAL
             self.imu_state = IMUState.ERROR
-            self.downloading = DownloadingState.IDLE
+            self.downloading_state = DownloadingState.IDLE
             self.battery_state = BatteryState()
             self.leds_manager = LedsManager()
             LedsManagerService._initialized = True
@@ -118,8 +118,8 @@ class LedsManagerService:
             self._update_leds()
     
     def set_downloading(self, state: DownloadingState):
-        if self.downloading != state:
-            self.downloading = state
+        if self.downloading_state != state:
+            self.downloading_state = state
             self._update_leds()
             
     def set_cellular_state(self, state: CellularState):
@@ -144,7 +144,7 @@ class LedsManagerService:
             self.leds_manager.turn_on(LEDColor.RED)
         elif self.imu_state == IMUState.ERROR:
             self.leds_manager.turn_on(LEDColor.RED)
-        elif self.system_state == SystemState.DOWLOADING:
+        elif self.downloading_state == DownloadingState.DOWNLOADING:
             self.leds_manager.blink(LEDColor.BLUE, 100)
         elif self.docking_state == DockingState.UNDOCKED:
             self.leds_manager.turn_on(LEDColor.RED)
@@ -173,6 +173,7 @@ class LedsManagerService:
               f"system_state={self.system_state}, "
               f"docking_state={self.docking_state}, "
               f"imu_state={self.imu_state}, "
+              f"downloading_state={self.downloading_state}, "
               f"gps_state={self.gps_state}, "
               f"cellular_state={self.cellular_state}, "
               f"battery_level={getattr(self.battery_state, 'level', None)}, "
