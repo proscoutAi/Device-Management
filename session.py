@@ -17,6 +17,7 @@ from gps_manager import get_gps_data, get_gps_data_age, is_gps_healthy, restart_
 from IMU_manager import IMUManager
 from leds_manager import GPSState, IMUState, LedsManagerService
 from upload import CloudFunctionClient
+from wifi_connection_check import is_wifi_connected_cached
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -73,34 +74,7 @@ def log_system_status():
 import subprocess
 import time
 
-def is_wifi_connected():
-    """Fast check - typically completes in <10ms"""
-    try:
-        result = subprocess.run(
-            ['ip', 'addr', 'show', 'wlan0'],
-            capture_output=True,
-            text=True,
-            timeout=1  # Short timeout just in case
-        )
-        return 'state UP' in result.stdout and 'inet ' in result.stdout
-    except:
-        return False
 
-# Optional: Cache the result for a few seconds
-last_wifi_check = 0
-wifi_status_cache = False
-WIFI_CHECK_INTERVAL = 5  # Check WiFi status every 5 seconds
-
-def is_wifi_connected_cached():
-    """Check WiFi status but cache result for a few seconds"""
-    global last_wifi_check, wifi_status_cache
-    
-    current_time = time.time()
-    if current_time - last_wifi_check > WIFI_CHECK_INTERVAL:
-        wifi_status_cache = is_wifi_connected()
-        last_wifi_check = current_time
-    
-    return wifi_status_cache
 
 class Session:
     """A class to represent a session of image capture"""

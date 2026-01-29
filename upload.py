@@ -13,6 +13,7 @@ from leds_manager import CellularState, DownloadingState, LedsManagerService
 from numpy import ndarray
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from wifi_connection_check import is_wifi_connected_cached
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -192,7 +193,8 @@ class CloudFunctionClient:
                     continue
                 
                 print(f"{time.ctime(time.time())}:📁 Found {len(files)} offline files to upload")
-                self.led_manager_service.set_downloading(DownloadingState.DOWNLOADING)
+                if (is_wifi_connected_cached):
+                    self.led_manager_service.set_downloading(DownloadingState.DOWNLOADING)
                 
                 for filename in sorted(files):  # Process files in order
                     filepath = os.path.join(offline_dir, filename)
