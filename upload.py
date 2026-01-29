@@ -193,7 +193,7 @@ class CloudFunctionClient:
                     continue
                 
                 print(f"{time.ctime(time.time())}:📁 Found {len(files)} offline files to upload")
-                if (is_wifi_connected_cached):
+                if (is_wifi_connected_cached()):
                     self.led_manager_service.set_downloading(DownloadingState.DOWNLOADING)
                 
                 for filename in sorted(files):  # Process files in order
