@@ -247,7 +247,7 @@ class Session:
             
             
             if wifi_download_only and  is_wifi_connected_cached():
-                # If we just entered WiFi-only mode, flush any pending batch data
+                # If we just entered WiFi-only mode, flush any pending batch data and stop IMU
                 if not in_wifi_only_mode:
                     in_wifi_only_mode = True
                     if len(self.batch_payload) > 0:
@@ -256,13 +256,22 @@ class Session:
                         gc.collect()
                     else:
                         print(f"{time.ctime(time.time())}:Entering WiFi download only mode - skipping data collection (no pending data)")
+                    # Stop IMU thread to prevent buffer accumulation
+                    if self.imu_manager and imu_connected:
+                        print(f"{time.ctime(time.time())}:Stopping IMU thread during WiFi-only mode")
+                        self.imu_manager.stop()
                 time.sleep(1)
                 continue
             
-            # If we just exited WiFi-only mode, reset the flag and log
+            # If we just exited WiFi-only mode, reset the flag, restart IMU, and log
             if in_wifi_only_mode:
                 in_wifi_only_mode = False
                 print(f"{time.ctime(time.time())}:Exiting WiFi download only mode - resuming data collection")
+                # Restart IMU thread
+                if self.imu_manager and imu_connected:
+                    print(f"{time.ctime(time.time())}:Restarting IMU thread")
+                    self.imu_manager.start()
+                    self.imu_last_data_time = time.time()  # Reset timing
             # Get GPS data with health checking
             gps_data = get_gps_data()
             

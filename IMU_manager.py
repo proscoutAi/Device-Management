@@ -105,7 +105,7 @@ class IMUManager:
             'GYRz_dps':0.0    
         }
         
-        
+        self.running = True
         self.thread = Thread(target=self.update_imu)
         self.thread.start()
         
@@ -708,7 +708,7 @@ class IMUManager:
         
     
     def update_imu(self):
-        while True:
+        while self.running:
             try:
                 self.readACCx()
                 self.readACCy()
@@ -735,6 +735,23 @@ class IMUManager:
             batch = imu_buffer.copy()
             imu_buffer = []
             return batch
+    
+    def stop(self):
+        """Stop the IMU thread and clear the buffer"""
+        global imu_buffer
+        self.running = False
+        if self.thread.is_alive():
+            self.thread.join(timeout=5)
+        # Clear the buffer when stopping
+        with lock:
+            imu_buffer = []
+    
+    def start(self):
+        """Start the IMU thread (if not already running)"""
+        if not self.running or not self.thread.is_alive():
+            self.running = True
+            self.thread = Thread(target=self.update_imu)
+            self.thread.start()
 
     def get_heading(self):
         """Calculate heading with tilt compensation"""
