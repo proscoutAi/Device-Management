@@ -241,19 +241,28 @@ class Session:
          self.upload_class.session_start_time = datetime.utcnow()
          print(f"{time.ctime(time.time())}:📅 Session start time set to: {self.upload_class.session_start_time.isoformat()}")
         
-        only_print_once = True
+        in_wifi_only_mode = False  # Track if we're currently in WiFi-only mode
         
         while self.running:
             
             
             if wifi_download_only and  is_wifi_connected_cached():
-                if only_print_once==True:
-                    print(f"{time.ctime(time.time())}:Entering WiFi download only mode - skipping data collection")
-                    only_print_once = False
+                # If we just entered WiFi-only mode, flush any pending batch data
+                if not in_wifi_only_mode:
+                    in_wifi_only_mode = True
+                    if len(self.batch_payload) > 0:
+                        print(f"{time.ctime(time.time())}:Entering WiFi download only mode - flushing {len(self.batch_payload)} pending data points")
+                        self.flash_batch()
+                        gc.collect()
+                    else:
+                        print(f"{time.ctime(time.time())}:Entering WiFi download only mode - skipping data collection (no pending data)")
                 time.sleep(1)
                 continue
             
-            only_print_once = True
+            # If we just exited WiFi-only mode, reset the flag and log
+            if in_wifi_only_mode:
+                in_wifi_only_mode = False
+                print(f"{time.ctime(time.time())}:Exiting WiFi download only mode - resuming data collection")
             # Get GPS data with health checking
             gps_data = get_gps_data()
             
