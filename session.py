@@ -111,6 +111,17 @@ class Session:
         self.gps_restart_attempts = 0
         self.max_gps_restarts = 5
         
+        # WiFi-only mode with movement detection
+        self.in_wifi_only_mode = False
+        self.monitoring_only_mode = False  # True when thread is killed, monitoring on-demand
+        self.last_movement_time = time.time()
+        self.no_movement_timeout = 300  # 5 minutes in seconds
+        self.movement_check_interval = 10  # Check movement every 10 seconds in monitoring mode
+        self.last_movement_check = 0
+        self.movement_confirmations_required = 3  # Require N consecutive movement readings to wake
+        self.no_movement_confirmations_required = 3  # Require N consecutive no-movement readings to sleep
+        self.consecutive_movement_count = 0  # Counter for consecutive movement readings
+        self.consecutive_no_movement_count = 0  # Counter for consecutive no-movement readings
     
     def flash_batch(self):
         executor.submit(self.upload_class.upload_json, self.batch_payload)
@@ -225,6 +236,119 @@ class Session:
         except Exception as e:
             print(f"{time.ctime(time.time())}:GPS restart failed: {e}")
             return False
+    
+    def _handle_wifi_only_mode_entry(self):
+        """Handle entry into WiFi-only mode"""
+        if len(self.batch_payload) > 0:
+            print(f"{time.ctime(time.time())}:Entering WiFi-only mode - flushing {len(self.batch_payload)} pending data points")
+            self.flash_batch()
+            gc.collect()
+        else:
+            print(f"{time.ctime(time.time())}:Entering WiFi-only mode - monitoring for movement")
+        
+        # Reset movement tracking
+        self.last_movement_time = time.time()
+        self.last_movement_check = time.time()  # Initialize to current time to prevent immediate check
+        self.monitoring_only_mode = False  # Start in active mode, will switch to monitoring if no movement
+        self.consecutive_movement_count = 0
+        self.consecutive_no_movement_count = 0
+    
+    def _handle_wifi_only_mode_exit(self):
+        """Handle exit from WiFi-only mode"""
+        print(f"{time.ctime(time.time())}:Exiting WiFi-only mode - resuming normal data collection")
+        
+        # Restart IMU thread if it was stopped
+        if self.monitoring_only_mode and self.imu_manager and imu_connected:
+            print(f"{time.ctime(time.time())}:Restarting IMU thread")
+            self.imu_manager.start()
+            self.imu_last_data_time = time.time()
+            self.monitoring_only_mode = False
+    
+    def _check_and_handle_movement(self):
+        """
+        Check for movement and handle WiFi-only mode transitions with debouncing.
+        Requires multiple consecutive readings before triggering state changes.
+        Returns True if data collection should continue, False if it should be skipped.
+        """
+        if not self.in_wifi_only_mode:
+            return True  # Normal mode, always collect
+        
+        current_time = time.time()
+        time_since_check = current_time - self.last_movement_check
+        
+        # Check movement if enough time has passed
+        if time_since_check >= self.movement_check_interval:
+            self.last_movement_check = current_time
+            
+            if self.imu_manager and imu_connected:
+                try:
+                    is_moving = self.imu_manager.is_moving()
+                except Exception as e:
+                    import traceback
+                    print(f"{time.ctime(time.time())}:Error checking movement: {e}")
+                    print(f"{time.ctime(time.time())}:Traceback: {traceback.format_exc()}")
+                    return True if not self.monitoring_only_mode else False
+            else:
+                print(f"{time.ctime(time.time())}:Movement check skipped - imu_manager: {self.imu_manager is not None}, imu_connected: {imu_connected}")
+                return True if not self.monitoring_only_mode else False
+            
+            # Process movement detection result (is_moving is set above)
+            if is_moving:
+                    # Movement detected - increment counter
+                    self.consecutive_movement_count += 1
+                    self.consecutive_no_movement_count = 0  # Reset no-movement counter
+                    
+                    # Only trigger wake if we have enough consecutive confirmations
+                    if self.consecutive_movement_count >= self.movement_confirmations_required:
+                        if self.monitoring_only_mode:
+                            # Restart IMU thread and resume collection
+                            print(f"{time.ctime(time.time())}:Movement detected ({self.consecutive_movement_count} confirmations) - resuming data collection")
+                            self.imu_manager.start()
+                            self.imu_last_data_time = time.time()
+                            self.monitoring_only_mode = False
+                            self.consecutive_movement_count = 0  # Reset counter
+                        
+                        self.last_movement_time = current_time
+                        return True  # Continue collecting
+                    else:
+                        # Not enough confirmations yet, but treat as moving
+                        return True if not self.monitoring_only_mode else False
+            else:
+                    # No movement detected - increment counter
+                    self.consecutive_no_movement_count += 1
+                    self.consecutive_movement_count = 0  # Reset movement counter
+                    
+                    # Check if we should enter monitoring mode
+                    time_since_movement = current_time - self.last_movement_time
+                    
+                    if not self.monitoring_only_mode:
+                        # Still in active collection mode
+                        if time_since_movement >= self.no_movement_timeout:
+                            # Timeout reached - check if we have enough consecutive no-movement readings
+                            if self.consecutive_no_movement_count >= self.no_movement_confirmations_required:
+                                # Enter monitoring-only mode
+                                print(f"{time.ctime(time.time())}:No movement detected ({self.consecutive_no_movement_count} confirmations, {time_since_movement:.0f}s) - entering monitoring-only mode")
+                                if self.imu_manager:
+                                    self.imu_manager.stop()
+                                self.monitoring_only_mode = True
+                                self.consecutive_no_movement_count = 0  # Reset counter
+                                return False  # Stop collecting
+                            else:
+                                # Timeout reached but not enough confirmations - continue collecting
+                                return True
+                        else:
+                            # Still within timeout - continue collecting
+                            return True
+                    else:
+                        # Already in monitoring mode, no movement
+                        return False  # Continue monitoring, don't collect
+        
+        # If in monitoring-only mode and not time to check yet, don't collect
+        if self.monitoring_only_mode:
+            return False
+        
+        # Otherwise, continue collecting (active mode, waiting for timeout or movement check)
+        return True
 
     def run(self):
         """The main loop of the session"""
@@ -241,37 +365,28 @@ class Session:
          self.upload_class.session_start_time = datetime.utcnow()
          print(f"{time.ctime(time.time())}:📅 Session start time set to: {self.upload_class.session_start_time.isoformat()}")
         
-        in_wifi_only_mode = False  # Track if we're currently in WiFi-only mode
-        
         while self.running:
             
+            # Handle WiFi-only mode transitions
+            wifi_connected = wifi_download_only and is_wifi_connected_cached()
             
-            if wifi_download_only and  is_wifi_connected_cached():
-                # If we just entered WiFi-only mode, flush any pending batch data and stop IMU
-                if not in_wifi_only_mode:
-                    in_wifi_only_mode = True
-                    if len(self.batch_payload) > 0:
-                        print(f"{time.ctime(time.time())}:Entering WiFi download only mode - flushing {len(self.batch_payload)} pending data points")
-                        self.flash_batch()
-                        gc.collect()
-                    else:
-                        print(f"{time.ctime(time.time())}:Entering WiFi download only mode - skipping data collection (no pending data)")
-                    # Stop IMU thread to prevent buffer accumulation
-                    if self.imu_manager and imu_connected:
-                        print(f"{time.ctime(time.time())}:Stopping IMU thread during WiFi-only mode")
-                        self.imu_manager.stop()
-                time.sleep(1)
-                continue
+            if wifi_connected and not self.in_wifi_only_mode:
+                # Just entered WiFi-only mode
+                self.in_wifi_only_mode = True
+                self._handle_wifi_only_mode_entry()
             
-            # If we just exited WiFi-only mode, reset the flag, restart IMU, and log
-            if in_wifi_only_mode:
-                in_wifi_only_mode = False
-                print(f"{time.ctime(time.time())}:Exiting WiFi download only mode - resuming data collection")
-                # Restart IMU thread
-                if self.imu_manager and imu_connected:
-                    print(f"{time.ctime(time.time())}:Restarting IMU thread")
-                    self.imu_manager.start()
-                    self.imu_last_data_time = time.time()  # Reset timing
+            if not wifi_connected and self.in_wifi_only_mode:
+                # Just exited WiFi-only mode
+                self.in_wifi_only_mode = False
+                self._handle_wifi_only_mode_exit()
+            
+            # In WiFi-only mode: check movement and decide if we should collect data
+            if self.in_wifi_only_mode:
+                should_collect = self._check_and_handle_movement()
+                if not should_collect:
+                    # Monitoring-only mode or no movement - skip data collection
+                    time.sleep(1)
+                    continue
             # Get GPS data with health checking
             gps_data = get_gps_data()
             
