@@ -279,10 +279,12 @@ class Session:
         # Check movement if enough time has passed
         if time_since_check >= self.movement_check_interval:
             self.last_movement_check = current_time
+            time_since_movement = current_time - self.last_movement_time  # Calculate once for use in both branches
             
             if self.imu_manager and imu_connected:
                 try:
                     is_moving = self.imu_manager.is_moving()
+                    print(f"{time.ctime(time.time())}:Movement check - is_moving: {is_moving}, time_since_movement: {time_since_movement:.0f}s, monitoring_only: {self.monitoring_only_mode}")
                 except Exception as e:
                     import traceback
                     print(f"{time.ctime(time.time())}:Error checking movement: {e}")
@@ -319,12 +321,12 @@ class Session:
                     self.consecutive_movement_count = 0  # Reset movement counter
                     
                     # Check if we should enter monitoring mode
-                    time_since_movement = current_time - self.last_movement_time
                     
                     if not self.monitoring_only_mode:
                         # Still in active collection mode
                         if time_since_movement >= self.no_movement_timeout:
                             # Timeout reached - check if we have enough consecutive no-movement readings
+                            print(f"{time.ctime(time.time())}:Timeout reached ({time_since_movement:.0f}s >= {self.no_movement_timeout}s) - consecutive_no_movement: {self.consecutive_no_movement_count}/{self.no_movement_confirmations_required}")
                             if self.consecutive_no_movement_count >= self.no_movement_confirmations_required:
                                 # Enter monitoring-only mode
                                 print(f"{time.ctime(time.time())}:No movement detected ({self.consecutive_no_movement_count} confirmations, {time_since_movement:.0f}s) - entering monitoring-only mode")
@@ -335,6 +337,7 @@ class Session:
                                 return False  # Stop collecting
                             else:
                                 # Timeout reached but not enough confirmations - continue collecting
+                                print(f"{time.ctime(time.time())}:Timeout reached but waiting for more confirmations ({self.consecutive_no_movement_count}/{self.no_movement_confirmations_required})")
                                 return True
                         else:
                             # Still within timeout - continue collecting
@@ -369,6 +372,11 @@ class Session:
             
             # Handle WiFi-only mode transitions
             wifi_connected = wifi_download_only and is_wifi_connected_cached()
+            
+            # Log WiFi-only mode status periodically (every 60 seconds) for debugging
+            if int(time.time()) % 60 == 0 and wifi_download_only:
+                wifi_status = is_wifi_connected_cached()
+                print(f"{time.ctime(time.time())}:WiFi-only mode check - wifi_download_only={wifi_download_only}, wifi_connected={wifi_status}, in_wifi_only_mode={self.in_wifi_only_mode}")
             
             if wifi_connected and not self.in_wifi_only_mode:
                 # Just entered WiFi-only mode
