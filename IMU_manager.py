@@ -774,43 +774,37 @@ class IMUManager:
     
     def is_moving(self, threshold_acc=0.3, threshold_gyro=12):
         """
-        Check if device is moving based on accelerometer and gyroscope readings.
-        Thresholds are set to detect slow walking and above.
+        Check if device is moving based on the latest cached IMU readings.
+        This function does NOT perform any I2C/hardware access – all sensor
+        reads happen in the background update_imu() thread.
         
         Args:
-            threshold_acc: Acceleration magnitude threshold in g (default 0.3g - detects slow walking)
-            threshold_gyro: Gyroscope threshold in degrees per second (default 12 dps - detects slow rotation)
+            threshold_acc: Acceleration magnitude threshold in g (default 0.3g)
+            threshold_gyro: Gyroscope threshold in degrees per second (default 12 dps)
         
         Returns:
-            True if device is moving, False otherwise
+            True if device is moving, False otherwise.
         """
-        imu_data = self.get_current_imu_reading()
-        if imu_data is None:
-            return False
-        
-        # Calculate acceleration magnitude
-        # Note: ACCx_mg_unit is already in g (despite the name), calculated as acc_combined * acc_sensitivity
-        # where acc_sensitivity = 0.244/1000 = 0.000244 g per LSB
-        acc_x = imu_data.get('ACCx_mg_unit', 0.0)  # Already in g
-        acc_y = imu_data.get('ACCy_mg_unit', 0.0)  # Already in g
-        acc_z = imu_data.get('ACCz_mg_unit', 0.0)  # Already in g
-        
-        # Calculate total acceleration magnitude (including gravity)
-        total_acc_magnitude = math.sqrt(acc_x**2 + acc_y**2 + acc_z**2)
-        
-        # Remove gravity component (gravity is ~1g)
-        # This works regardless of device orientation
-        acc_magnitude = abs(total_acc_magnitude - 1.0)
-        
-        # Check gyroscope for rotation
-        gyro_x = abs(imu_data.get('GYRx_dps', 0.0))
-        gyro_y = abs(imu_data.get('GYRy_dps', 0.0))
-        gyro_z = abs(imu_data.get('GYRz_dps', 0.0))
-        gyro_max = max(gyro_x, gyro_y, gyro_z)
-        # Device is moving if acceleration exceeds threshold OR gyroscope exceeds threshold
-        is_moving = (acc_magnitude > threshold_acc) or (gyro_max > threshold_gyro)
-        
-        return is_moving
+        with lock:
+            # Use latest cached sample from the IMU thread
+            acc_x = self.imu_data.get('ACCx_mg_unit', 0.0)  # Already in g
+            acc_y = self.imu_data.get('ACCy_mg_unit', 0.0)
+            acc_z = self.imu_data.get('ACCz_mg_unit', 0.0)
+
+            # Calculate total acceleration magnitude (including gravity)
+            total_acc_magnitude = math.sqrt(acc_x**2 + acc_y**2 + acc_z**2)
+
+            # Remove gravity component (~1g), orientation-independent
+            acc_magnitude = abs(total_acc_magnitude - 1.0)
+
+            # Check gyroscope for rotation
+            gyro_x = abs(self.imu_data.get('GYRx_dps', 0.0))
+            gyro_y = abs(self.imu_data.get('GYRy_dps', 0.0))
+            gyro_z = abs(self.imu_data.get('GYRz_dps', 0.0))
+            gyro_max = max(gyro_x, gyro_y, gyro_z)
+
+            # Device is moving if acceleration exceeds threshold OR gyroscope exceeds threshold
+            return (acc_magnitude > threshold_acc) or (gyro_max > threshold_gyro)
 
     def get_heading(self):
         """Calculate heading with tilt compensation"""

@@ -256,13 +256,8 @@ class Session:
     def _handle_wifi_only_mode_exit(self):
         """Handle exit from WiFi-only mode"""
         print(f"{time.ctime(time.time())}:Exiting WiFi-only mode - resuming normal data collection")
-        
-        # Restart IMU thread if it was stopped
-        if self.monitoring_only_mode and self.imu_manager and imu_connected:
-            print(f"{time.ctime(time.time())}:Restarting IMU thread")
-            self.imu_manager.start()
-            self.imu_last_data_time = time.time()
-            self.monitoring_only_mode = False
+        # Ensure we resume normal data collection state
+        self.monitoring_only_mode = False
     
     def _check_and_handle_movement(self):
         """
@@ -296,25 +291,23 @@ class Session:
             
             # Process movement detection result (is_moving is set above)
             if is_moving:
-                    # Movement detected - increment counter
-                    self.consecutive_movement_count += 1
-                    self.consecutive_no_movement_count = 0  # Reset no-movement counter
-                    
-                    # Only trigger wake if we have enough consecutive confirmations
-                    if self.consecutive_movement_count >= self.movement_confirmations_required:
-                        if self.monitoring_only_mode:
-                            # Restart IMU thread and resume collection
-                            print(f"{time.ctime(time.time())}:Movement detected ({self.consecutive_movement_count} confirmations) - resuming data collection")
-                            self.imu_manager.start()
-                            self.imu_last_data_time = time.time()
-                            self.monitoring_only_mode = False
-                            self.consecutive_movement_count = 0  # Reset counter
-                        
-                        self.last_movement_time = current_time
-                        return True  # Continue collecting
-                    else:
-                        # Not enough confirmations yet, but treat as moving
-                        return True if not self.monitoring_only_mode else False
+                # Movement detected - increment counter
+                self.consecutive_movement_count += 1
+                self.consecutive_no_movement_count = 0  # Reset no-movement counter
+                
+                # Only trigger wake if we have enough consecutive confirmations
+                if self.consecutive_movement_count >= self.movement_confirmations_required:
+                    if self.monitoring_only_mode:
+                        # Resume active collection mode (IMU thread stays running)
+                        print(f"{time.ctime(time.time())}:Movement detected ({self.consecutive_movement_count} confirmations) - resuming data collection")
+                        self.monitoring_only_mode = False
+                    # Reset movement timeout and counter
+                    self.last_movement_time = current_time
+                    self.consecutive_movement_count = 0
+                    return True  # Continue collecting
+                else:
+                    # Not enough confirmations yet, but treat as moving
+                    return True if not self.monitoring_only_mode else False
             else:
                     # No movement detected - increment counter
                     self.consecutive_no_movement_count += 1
@@ -328,10 +321,8 @@ class Session:
                             # Timeout reached - check if we have enough consecutive no-movement readings
                             print(f"{time.ctime(time.time())}:Timeout reached ({time_since_movement:.0f}s >= {self.no_movement_timeout}s) - consecutive_no_movement: {self.consecutive_no_movement_count}/{self.no_movement_confirmations_required}")
                             if self.consecutive_no_movement_count >= self.no_movement_confirmations_required:
-                                # Enter monitoring-only mode
+                                # Enter monitoring-only mode (stop sending IMU data, but keep IMU thread running)
                                 print(f"{time.ctime(time.time())}:No movement detected ({self.consecutive_no_movement_count} confirmations, {time_since_movement:.0f}s) - entering monitoring-only mode")
-                                if self.imu_manager:
-                                    self.imu_manager.stop()
                                 self.monitoring_only_mode = True
                                 self.consecutive_no_movement_count = 0  # Reset counter
                                 return False  # Stop collecting
@@ -393,6 +384,12 @@ class Session:
                 should_collect = self._check_and_handle_movement()
                 if not should_collect:
                     # Monitoring-only mode or no movement - skip data collection
+                    # but flush IMU buffer so it doesn't grow unbounded
+                    if self.imu_manager and imu_connected:
+                        try:
+                            _ = self.imu_manager.get_imu_buffer_and_reset()
+                        except Exception as e:
+                            print(f"{time.ctime(time.time())}:Error clearing IMU buffer during WiFi-only monitoring: {e}")
                     time.sleep(1)
                     continue
             # Get GPS data with health checking
